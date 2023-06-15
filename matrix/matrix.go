@@ -168,7 +168,7 @@ func (c *Container) concludeLogin(resp *mautrix.RespLogin) {
 	fmt.Println(resp.UserID.String() + " = " + c.client.UserID.String())
 	fmt.Println(resp.AccessToken + c.client.AccessToken)
 
-	go c.Start()
+	//go c.Start()
 }
 
 func (c *Container) Logout() {
@@ -188,58 +188,6 @@ func (c *Container) DeviceInfo() {
 	fmt.Println(resp.DisplayName)
 	fmt.Println(resp.LastSeenIP)
 	fmt.Println(resp.LastSeenTS)
-}
-
-func (c *Container) NewRoom(roomName string, topic string, inviteList []id.UserID) error {
-	resp, err := c.client.CreateRoom(&mautrix.ReqCreateRoom{
-		Preset: "trusted_private_chat",
-		Name:   roomName,
-		Topic:  topic,
-		Invite: inviteList,
-	})
-	fmt.Println("Room:", resp.RoomID)
-
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// Stops a user from participating in a given room, but it may still be able to retrieve its history
-// if it rejoins the same room
-func (c *Container) ExitRoom(roomID id.RoomID, reason string) error {
-	if reason != "" {
-		resp, err := c.client.LeaveRoom(roomID, &mautrix.ReqLeave{
-			Reason: reason,
-		})
-		if err != nil {
-			return fmt.Errorf("could not leave room: %w", err)
-		}
-
-		fmt.Println(resp)
-	} else {
-		resp, err := c.client.LeaveRoom(roomID)
-		if err != nil {
-			return err
-		}
-		fmt.Println(resp)
-	}
-
-	return nil
-}
-
-// After this function is called, a user will no longer be able to retrieve history for the given room.
-// If all users on a homeserver forget a room, the room is eligible for deletion from that homeserver.
-func (c *Container) ForgetRoom(roomID id.RoomID) error {
-	resp, err := c.client.ForgetRoom(roomID)
-
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(resp)
-	return nil
 }
 
 func (c *Container) Synchronize() {
@@ -300,4 +248,59 @@ func (c *Container) Stop() {
 			}
 		}*/
 	}
+}
+
+/*************************** ROOMS *******************************/
+
+func (c *Container) NewRoom(roomName string, topic string, inviteList []id.UserID) error {
+	resp, err := c.client.CreateRoom(&mautrix.ReqCreateRoom{
+		Preset: "trusted_private_chat",
+		Name:   roomName,
+		Topic:  topic,
+		Invite: inviteList,
+	})
+	fmt.Println("Room:", resp.RoomID)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Stops a user from participating in a given room, but it may still be able to retrieve its history
+// if it rejoins the same room
+func (c *Container) ExitRoom(roomID id.RoomID, reason string) error {
+	var resp *mautrix.RespLeaveRoom
+	var err error
+
+	if reason != "" {
+		resp, err = c.client.LeaveRoom(roomID, &mautrix.ReqLeave{
+			Reason: reason,
+		})
+
+	} else {
+		resp, err = c.client.LeaveRoom(roomID)
+	}
+
+	if err != nil {
+		return fmt.Errorf("could not leave room: %w", err)
+	} else {
+		fmt.Println(resp)
+	}
+
+	return nil
+}
+
+// After this function is called, a user will no longer be able to retrieve history for the given room.
+// If all users on a homeserver forget a room, the room is eligible for deletion from that homeserver.
+func (c *Container) ForgetRoom(roomID id.RoomID) error {
+	resp, err := c.client.ForgetRoom(roomID)
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(resp)
+	return nil
 }

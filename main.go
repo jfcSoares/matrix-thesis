@@ -11,6 +11,8 @@ func main() {
 	c.InitClient(false, "")
 	c.Login("test1", "Test1!´´´")
 
+	c.NewRoom("Test Room", "For testing", nil)
+
 	//<-c.IsStopped()
 	c.Logout()
 }
