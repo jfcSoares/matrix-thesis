@@ -304,3 +304,56 @@ func (c *Container) ForgetRoom(roomID id.RoomID) error {
 	fmt.Println(resp)
 	return nil
 }
+
+func (c *Container) InviteUser(roomID id.RoomID, reason, user string) {
+	resp, err := c.client.InviteUser(roomID, &mautrix.ReqInviteUser{
+		Reason: reason,
+		UserID: id.UserID(user),
+	})
+
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(resp)
+	}
+}
+
+// Lists the rooms the user is currently joined into
+func (c *Container) RoomsJoined() {
+	resp, err := c.client.JoinedRooms()
+
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		for i := 0; i < len(resp.JoinedRooms); i++ {
+			fmt.Println(resp.JoinedRooms[i])
+		}
+	}
+}
+
+// Joins a room with the given room or alias, through the specified server in the arguments
+func (c *Container) JoinRoom(roomIdOrAlias, server string, content interface{}) error {
+	//maybe add a check to see if content is nil
+	resp, err := c.client.JoinRoom(roomIdOrAlias, server, content)
+
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(resp)
+	}
+
+	return nil
+}
+
+// Joins a room with the given roomID
+func (c *Container) JoinRoomByID(roomID id.RoomID) error {
+	resp, err := c.client.JoinRoomByID(roomID)
+
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(resp)
+	}
+
+	return nil
+}
