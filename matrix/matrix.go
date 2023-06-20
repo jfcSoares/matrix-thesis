@@ -169,7 +169,7 @@ func (c *ClientWrapper) PasswordLogin(user, password string) error {
 // Concludes the login process, by assigning some last values to config fields
 func (c *ClientWrapper) concludeLogin(resp *mautrix.RespLogin) {
 	fmt.Println(resp.UserID.String() + " = " + c.client.UserID.String())
-	fmt.Println(resp.AccessToken + c.client.AccessToken)
+	fmt.Println(resp.AccessToken + " = " + c.client.AccessToken)
 
 	//go c.Start()
 }
@@ -399,19 +399,20 @@ func (c *ClientWrapper) InviteUser(roomID id.RoomID, reason, user string) error 
 }
 
 // Lists the rooms the user is currently joined into
-func (c *ClientWrapper) RoomsJoined() error {
+func (c *ClientWrapper) RoomsJoined() ([]id.RoomID, error) {
 	resp, err := c.client.JoinedRooms()
 
 	if err != nil {
 		fmt.Println(err)
-		return err
+		return nil, err
 	} else {
 		for i := 0; i < len(resp.JoinedRooms); i++ {
 			fmt.Println(resp.JoinedRooms[i])
+			//first indexes are the most recent rooms
 		}
 	}
 
-	return nil
+	return resp.JoinedRooms, err
 }
 
 // Joins a room with the given room or alias, through the specified server in the arguments
@@ -468,8 +469,11 @@ func (c *ClientWrapper) SendMessageEvent(evt *events.Event) (id.EventID, error) 
 
 	resp, err := c.client.SendMessageEvent(evt.RoomID, evt.Type, &evt.Content, mautrix.ReqSendEvent{TransactionID: evt.Unsigned.TransactionID})
 	if err != nil {
+		fmt.Println(err)
 		return "", err
 	}
+
+	fmt.Println("Sent message with event ID: " + resp.EventID)
 	return resp.EventID, nil
 }
 
