@@ -3,26 +3,36 @@ package matrix
 import (
 	"errors"
 	"fmt"
+	"matrix/config"
 	"matrix/matrix/events"
+	"os"
 	"time"
 
+	"github.com/rs/zerolog"
+	"maunium.net/go/gomuks/matrix/rooms"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/crypto"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
 
 type ClientWrapper struct {
-	client  *mautrix.Client
-	syncer  *mautrix.DefaultSyncer
+	client *mautrix.Client //the client which communicates with the homeserver
+
+	syncer *mautrix.DefaultSyncer //responsible for syncing room data with server
+
+	//history *mautrix.MemorySyncStore //tracks session data as in memory data structures
+
+	crypto *crypto.OlmMachine
+
+	config *config.Config
+
+	logger zerolog.Logger
+
+	rooms   *rooms.RoomCache
 	running bool
 	stop    chan bool
 }
-
-/*type mxLogger struct{}
-
-/func (log mxLogger) Debugfln(message string, args ...interface{}) {
-	debug.Printf("[Matrix] "+message, args...)
-}*/
 
 var MinSpecVersion = mautrix.SpecV11
 var SkipVersionCheck = false
@@ -32,7 +42,7 @@ var (
 	ErrServerOutdated = errors.New("homeserver is outdated")
 )
 
-// NewContainer creates a new Container for the given client instance.
+// NewWrapper creates a new ClientWrapper object for the given client instance.
 func NewWrapper() *ClientWrapper {
 	c := &ClientWrapper{
 		running: false,
@@ -41,11 +51,17 @@ func NewWrapper() *ClientWrapper {
 	return c
 }
 
+func (c *ClientWrapper) initLogger() {
+	log := zerolog.New(os.Stderr).With().Timestamp().Logger()
+	log = log.Level(zerolog.InfoLevel)
+
+	c.logger = log
+}
+
 // initializes the client and connects to the specified homeserver
-func (c *ClientWrapper) InitClient(isStartup bool, userID id.UserID) error {
+func (c *ClientWrapper) InitClient(isStartup bool) error {
 
 	//c.client.UserAgent = fmt.Sprintf("gomuks/%s %s", c.gmx.Version(), mautrix.DefaultUserAgent)
-	//c.client.Logger = mxLogger{}
 	//c.client.DeviceID = c.config.DeviceID
 
 	if c.Initialized() {
@@ -60,7 +76,7 @@ func (c *ClientWrapper) InitClient(isStartup bool, userID id.UserID) error {
 		mxid = c.client.UserID
 	} else {
 		mxid = userID
-	}*/
+	}*/ //once, or if, the sessions are persisted through several logins
 
 	var err error
 	c.client, err = mautrix.NewClient("https://lpgains.duckdns.org", "", "")
@@ -68,14 +84,27 @@ func (c *ClientWrapper) InitClient(isStartup bool, userID id.UserID) error {
 		return fmt.Errorf("failed to create mautrix client: %w", err)
 	}
 
+	err = c.initCrypto()
+	if err != nil {
+		return fmt.Errorf("failed to initialize crypto: %w", err)
+	}
+
+	/*
+		if c.history == nil {
+			c.history, err = mautrix.NewMemorySyncStore()
+			if err != nil {
+				return fmt.Errorf("failed to initialize history: %w", err)
+			}
+		}*/
+
 	/*allowInsecure := len(os.Getenv("CLIENT_ALLOW_INSECURE_CONNECTIONS")) > 0
 	if allowInsecure {
 		c.client.Client = &http.Client{
 			Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
 		}
-	}*/
+	}*/ //just in case, but probably will not be necessary
 
-	if !SkipVersionCheck && (!isStartup || len(c.client.AccessToken) > 0) {
+	/*if !SkipVersionCheck && (!isStartup || len(c.client.AccessToken) > 0) {
 		fmt.Printf("Checking versions that %s supports.", c.client.HomeserverURL)
 		resp, err := c.client.Versions()
 		if err != nil {
@@ -84,7 +113,7 @@ func (c *ClientWrapper) InitClient(isStartup bool, userID id.UserID) error {
 		} else if !resp.ContainsGreaterOrEqual(MinSpecVersion) {
 			fmt.Print("Server doesn't support modern spec versions.")
 			bestVersionStr := "nothing"
-			bestVersion := mautrix.MustParseSpecVersion("r0.0.0")
+			bestVersion := gomatrix.MustParseSpecVersion("r0.0.0")
 			for _, ver := range resp.Versions {
 				if ver.GreaterThan(bestVersion) {
 					bestVersion = ver
@@ -95,7 +124,7 @@ func (c *ClientWrapper) InitClient(isStartup bool, userID id.UserID) error {
 		} else {
 			fmt.Print("Server supports modern spec versions")
 		}
-	}
+	}*/ //for posterity, but will probably not be required, since we know the properties of the server a priori
 
 	c.stop = make(chan bool, 1)
 
@@ -161,6 +190,7 @@ func (c *ClientWrapper) PasswordLogin(user, password string) error {
 		return err
 	}
 
+	c.client.SetCredentials(resp.UserID, resp.AccessToken)
 	c.concludeLogin(resp)
 
 	return nil
@@ -168,7 +198,7 @@ func (c *ClientWrapper) PasswordLogin(user, password string) error {
 
 // Concludes the login process, by assigning some last values to config fields
 func (c *ClientWrapper) concludeLogin(resp *mautrix.RespLogin) {
-	fmt.Println(resp.UserID.String() + " = " + c.client.UserID.String())
+	fmt.Println(resp.UserID + " = " + c.client.UserID)
 	fmt.Println(resp.AccessToken + " = " + c.client.AccessToken)
 
 	//go c.Start()
@@ -182,23 +212,10 @@ func (c *ClientWrapper) Logout() {
 	c.client = nil
 }
 
-// Obtains information about the device currently being used
-func (c *ClientWrapper) DeviceInfo() {
-	resp, err := c.client.GetDeviceInfo(c.client.DeviceID)
-	if err != nil {
-		fmt.Println("Failed to obtain device info: %w", err)
-	}
-	fmt.Println(resp.DeviceID.String())
-	fmt.Println(resp.DisplayName)
-	fmt.Println(resp.LastSeenIP)
-	fmt.Println(resp.LastSeenTS)
-}
-
-func (c *ClientWrapper) Synchronize() {
-	c.client.Sync()
-}
-
 func (c *ClientWrapper) Start() {
+
+	//c.OnLogin() Initialize the syncer
+
 	if c.client == nil {
 		return
 	}
@@ -259,6 +276,7 @@ func (c *ClientWrapper) Stop() {
 	//c.cryptoOnLogin()
 	//c.ui.OnLogin()
 
+	c.client.Store = c.config
 
 	debug.Print("Initializing syncer")
 	c.syncer = mautrix.NewDefaultSyncer()
@@ -320,21 +338,22 @@ func (c *ClientWrapper) Stop() {
 //*************************** ROOMS *******************************//
 
 // Attempts to create a new room with the given name, topic, and an invited users list
-func (c *ClientWrapper) NewRoom(roomName string, topic string, inviteList []id.UserID) (id.RoomID, error) {
+func (c *ClientWrapper) NewRoom(roomName string, topic string, inviteList []id.UserID) (*rooms.Room, error) {
 	resp, err := c.client.CreateRoom(&mautrix.ReqCreateRoom{
 		Preset: "trusted_private_chat",
 		Name:   roomName,
 		Topic:  topic,
 		Invite: inviteList,
 	})
-	fmt.Println("Created room with ID: " + resp.RoomID)
-	c.client.Log.Info().Msg("Created room with ID: " + resp.RoomID.String())
 
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return resp.RoomID, nil
+	fmt.Println("Created room with ID: " + resp.RoomID)
+	room := c.GetOrCreateRoom(resp.RoomID)
+
+	return room, nil
 }
 
 // Stops a user from participating in a given room, but it may still be able to retrieve its history
@@ -353,13 +372,15 @@ func (c *ClientWrapper) ExitRoom(roomID id.RoomID, reason string) error {
 	}
 
 	if err != nil {
-		c.client.Log.Err(err).Msg("Could not leave room")
-		return fmt.Errorf("could not leave room: %w", err)
-	} else {
-		fmt.Println(resp)
-		fmt.Println("Left room with ID: " + roomID)
-		c.client.Log.Info().Msg("Left room with ID: " + roomID.String())
+		fmt.Errorf("could not leave room: %w", err)
+		return err
 	}
+
+	node := c.GetOrCreateRoom(roomID)
+	node.HasLeft = true
+	node.Unload()
+	fmt.Println(resp)
+	fmt.Println("Left room with ID: " + roomID)
 
 	return nil
 }
@@ -375,7 +396,6 @@ func (c *ClientWrapper) ForgetRoom(roomID id.RoomID) error {
 
 	fmt.Println(resp)
 	fmt.Println("Forgot room with ID: " + roomID)
-	c.client.Log.Info().Msg("Forgot the room with id: " + roomID.String())
 	return nil
 }
 
@@ -392,7 +412,6 @@ func (c *ClientWrapper) InviteUser(roomID id.RoomID, reason, user string) error 
 	} else {
 		fmt.Println(resp)
 		fmt.Println("Successfully Invited " + user + " to the room with id: " + roomID.String())
-		c.client.Log.Info().Msg("Successfully invited " + user + " to the room with id: " + roomID.String())
 	}
 
 	return nil
@@ -416,33 +435,22 @@ func (c *ClientWrapper) RoomsJoined() ([]id.RoomID, error) {
 }
 
 // Joins a room with the given room or alias, through the specified server in the arguments
-func (c *ClientWrapper) JoinRoom(roomIdOrAlias, server string, content interface{}) error {
+func (c *ClientWrapper) JoinRoom(roomIdOrAlias, server string, content interface{}) (*rooms.Room, error) {
 	//maybe add a check to see if content is nil
 	resp, err := c.client.JoinRoom(roomIdOrAlias, server, content)
 
 	if err != nil {
 		fmt.Println(err)
-		return err
+		return nil, err
 	} else {
 		fmt.Println(resp)
 	}
 
-	return nil
-}
+	room := c.GetOrCreateRoom(resp.RoomID)
+	room.HasLeft = false
+	fmt.Println("Successfully joined room with id: " + roomIdOrAlias)
 
-// Joins a room with the given roomID
-func (c *ClientWrapper) JoinRoomByID(roomID id.RoomID) error {
-	resp, err := c.client.JoinRoomByID(roomID)
-
-	if err != nil {
-		fmt.Println(err)
-		return err
-	} else {
-		fmt.Println(resp)
-		fmt.Println("Joined room with ID: " + roomID)
-	}
-
-	return nil
+	return room, nil
 }
 
 // Retrieves the list of members of the given room
@@ -459,6 +467,16 @@ func (c *ClientWrapper) JoinedMembers(roomID id.RoomID) error {
 	}
 
 	return nil
+}
+
+// GetOrCreateRoom gets the room instance stored in the session.
+func (c *ClientWrapper) GetOrCreateRoom(roomID id.RoomID) *rooms.Room {
+	return c.rooms.GetOrCreate(roomID)
+}
+
+// GetRoom gets the room instance stored in the session.
+func (c *ClientWrapper) GetRoom(roomID id.RoomID) *rooms.Room {
+	return c.rooms.Get(roomID)
 }
 
 //*************************** EVENTS *******************************//
@@ -514,3 +532,22 @@ func (c *ClientWrapper) GetState(roomID id.RoomID) (*mautrix.RoomStateMap, error
 /*func (c *ClientWrapper) SendToDevice(eventType event.Type, req *mautrix.ReqSendToDevice) (*mautrix.RespSendToDevice, error) {
 	probably will not need this
 }*/
+
+// HandleMessage is the event handler for the m.room.message timeline event.
+func (c *ClientWrapper) HandleMessage(source mautrix.EventSource, mxEvent *event.Event) {
+	room := c.GetOrCreateRoom(mxEvent.RoomID)
+	if source&mautrix.EventSourceLeave != 0 {
+		room.HasLeft = true
+		return
+	} else if source&mautrix.EventSourceState != 0 {
+		return
+	}
+
+	fmt.Println("Message has reached its handler!")
+	//Possivelmente fazer alguma coisa com o conteudo da mensagem (se for um alerta de intruso por exemplo)
+
+	//Persistir num ficheiro o evento se o professor achar necessário
+
+	//Açoes para o UI talvez
+
+}

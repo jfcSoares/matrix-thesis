@@ -12,7 +12,7 @@ import (
 
 func main() {
 	c := matrix.NewWrapper()
-	c.InitClient(false, "")
+	c.InitClient(false)
 	c.Login("test1", "Test1!´´´")
 
 	//roomID, _ := c.NewRoom("Test Room", "For testing", nil)

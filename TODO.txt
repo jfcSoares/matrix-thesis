@@ -1,0 +1,9 @@
+-> Decidir se vale a pena manter uma copia do estado da room em memoria, ou se compensa ter menos custo de armazenamento
+ e fazer mais calls à API
+
+-> Pensar em como fazer a CLI, i.e., como apresentar a informação
+
+-> Encriptação
+
+-> Acrescentar funcionalidade da comunicação offline por proximidade
+
