@@ -426,7 +426,7 @@ func (c *ClientWrapper) ForgetRoom(roomID id.RoomID) error {
 
 // Invites the given user to the room corresponding to the provided roomID
 func (c *ClientWrapper) InviteUser(roomID id.RoomID, reason, user string) error {
-	resp, err := c.client.InviteUser(roomID, &mautrix.ReqInviteUser{
+	_, err := c.client.InviteUser(roomID, &mautrix.ReqInviteUser{
 		Reason: reason,
 		UserID: id.UserID(user),
 	})
@@ -435,10 +435,10 @@ func (c *ClientWrapper) InviteUser(roomID id.RoomID, reason, user string) error 
 		fmt.Println(err)
 		c.logger.Error().Msg(err.Error())
 		return err
-	} else {
-		fmt.Println("Successfully Invited " + user + " to the room with id: " + roomID.String())
-		c.logger.Info().Msg("Successfully Invited " + user + " to the room with id: " + roomID.String())
 	}
+
+	fmt.Println("Successfully Invited " + user + " to the room with id: " + roomID.String())
+	c.logger.Info().Msg("Successfully Invited " + user + " to the room with id: " + roomID.String())
 
 	return nil
 }
