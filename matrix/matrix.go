@@ -17,9 +17,9 @@ import (
 )
 
 type ClientWrapper struct {
-	client *mautrix.Client //the client which communicates with the homeserver
+	client *mautrix.Client //the matrix client which communicates with the homeserver
 
-	syncer *mautrix.DefaultSyncer //responsible for syncing room data with server
+	syncer *mautrix.DefaultSyncer //responsible for syncing data with server
 
 	//history *mautrix.MemorySyncStore //tracks session data as in memory data structures
 
@@ -44,10 +44,12 @@ var (
 
 // NewWrapper creates a new ClientWrapper object for the given client instance.
 func NewWrapper() *ClientWrapper {
+
 	c := &ClientWrapper{
 		running: false,
 	}
 
+	c.initLogger()
 	return c
 }
 
@@ -61,12 +63,10 @@ func (c *ClientWrapper) initLogger() {
 // initializes the client and connects to the specified homeserver
 func (c *ClientWrapper) InitClient(isStartup bool) error {
 
-	//c.client.UserAgent = fmt.Sprintf("gomuks/%s %s", c.gmx.Version(), mautrix.DefaultUserAgent)
-	//c.client.DeviceID = c.config.DeviceID
-
 	if c.Initialized() {
 		c.Stop()
 		c.client = nil
+		c.crypto = nil
 	}
 
 	/*var mxid id.UserID
@@ -81,11 +81,13 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 	var err error
 	c.client, err = mautrix.NewClient("https://lpgains.duckdns.org", "", "")
 	if err != nil {
+		c.logger.Error().Msg("failed to create mautrix client: " + err.Error())
 		return fmt.Errorf("failed to create mautrix client: %w", err)
 	}
 
 	err = c.initCrypto()
 	if err != nil {
+		c.logger.Error().Msg("failed to initialize crypto: " + err.Error())
 		return fmt.Errorf("failed to initialize crypto: %w", err)
 	}
 
@@ -153,6 +155,7 @@ func (c *ClientWrapper) Initialized() bool {
 func (c *ClientWrapper) Login(user, password string) error {
 	resp, err := c.client.GetLoginFlows()
 	if err != nil {
+		c.logger.Error().Msg("could not get check the login flows supported by the homeserver")
 		return err
 	}
 
@@ -160,8 +163,10 @@ func (c *ClientWrapper) Login(user, password string) error {
 		if flow.Type == "m.login.password" {
 			return c.PasswordLogin(user, password)
 		} else if flow.Type == "m.login.sso" {
+			c.logger.Error().Msg("SSO login method is not supported")
 			return fmt.Errorf("SSO login method is not supported")
 		} else {
+			c.logger.Error().Msg("login flow is not supported")
 			return fmt.Errorf("Login flow is not supported")
 		}
 
@@ -187,6 +192,7 @@ func (c *ClientWrapper) PasswordLogin(user, password string) error {
 	})
 
 	if err != nil {
+		c.logger.Error().Msg("could not login -> " + err.Error())
 		return err
 	}
 
@@ -201,14 +207,23 @@ func (c *ClientWrapper) concludeLogin(resp *mautrix.RespLogin) {
 	fmt.Println(resp.UserID + " = " + c.client.UserID)
 	fmt.Println(resp.AccessToken + " = " + c.client.AccessToken)
 
+	//Persist client credentials
+	c.config.UserID = resp.UserID
+	c.config.DeviceID = resp.DeviceID
+	c.config.AccessToken = resp.AccessToken
+	if resp.WellKnown != nil && len(resp.WellKnown.Homeserver.BaseURL) > 0 {
+		c.config.Homeserver = resp.WellKnown.Homeserver.BaseURL
+	}
+
 	//go c.Start()
 }
 
 func (c *ClientWrapper) Logout() {
 	fmt.Println("Logging out...")
+	c.logger.Info().Msg("Logging out...")
 	c.client.Logout()
 	c.Stop()
-	c.client.ClearCredentials()
+	c.client.ClearCredentials() //for now, since we are not persisting sessions
 	c.client = nil
 }
 
@@ -221,25 +236,30 @@ func (c *ClientWrapper) Start() {
 	}
 
 	fmt.Print("Starting sync...")
+	c.logger.Info().Msg("Starting sync...")
 	c.running = true
 	c.client.StreamSyncMinAge = 30 * time.Minute
 	for {
 		select {
 		case <-c.stop:
 			fmt.Print("Stopping sync...")
+			c.logger.Info().Msg("Stopping sync...")
 			c.running = false
 			return
 		default:
 			if err := c.client.Sync(); err != nil {
 				if errors.Is(err, mautrix.MUnknownToken) {
 					fmt.Print("Sync() errored with ", err, " -> logging out")
-					// TODO support soft logout
+					c.logger.Error().Msg("Access token was not recognized -> logging out")
 					c.Logout()
+					//if this happens, something is probably severely wrong with the device, completely kill the session?
 				} else {
 					fmt.Print("Sync() errored", err)
+					c.logger.Error().Msg("Sync() call errored with: " + err.Error())
 				}
 			} else {
 				fmt.Print("Sync() returned without error")
+				c.logger.Info().Msg("Sync() call returned successfully")
 				c.Logout() //ONLY FOR TESTING
 			}
 		}
@@ -250,6 +270,7 @@ func (c *ClientWrapper) Start() {
 func (c *ClientWrapper) Stop() {
 	if c.running {
 		fmt.Print("Stopping Matrix client...")
+		c.logger.Info().Msg("Stopping Matrix client...")
 		select {
 		case c.stop <- true:
 		default:
@@ -260,14 +281,14 @@ func (c *ClientWrapper) Stop() {
 		if err != nil {
 			debug.Print("Error closing history manager:", err)
 		}
-		c.history = nil
+		c.history = nil*/
 		if c.crypto != nil {
-			debug.Print("Flushing crypto store")
-			err = c.crypto.FlushStore()
+			c.logger.Info().Msg("Flushing crypto store")
+			err := c.crypto.FlushStore()
 			if err != nil {
-				debug.Print("Error flushing crypto store:", err)
+				c.logger.Error().Msg("Error on flushing the crypto store: " + err.Error())
 			}
-		}*/
+		}
 	}
 }
 
@@ -278,7 +299,7 @@ func (c *ClientWrapper) Stop() {
 
 	c.client.Store = c.config
 
-	debug.Print("Initializing syncer")
+	c.logger.Info().Msg("Initializing syncer")
 	c.syncer = mautrix.NewDefaultSyncer()
 	if c.crypto != nil {
 		c.syncer.OnSync(c.crypto.ProcessSyncResponse)
@@ -307,7 +328,7 @@ func (c *ClientWrapper) Stop() {
 	c.syncer.OnEventType(event.AccountDataDirectChats, c.HandleDirectChatInfo)
 	c.syncer.OnEventType(event.AccountDataPushRules, c.HandlePushRules)
 	c.syncer.OnEventType(event.AccountDataRoomTags, c.HandleTag)
-	//TODO: Add custom event handler for bluetooth comms maybe?
+	//TODO: Add custom event handler for offline comms maybe?
 	/*c.syncer.InitDoneCallback = func() {
 		fmt.Print("Initial sync done")
 		c.config.AuthCache.InitialSyncDone = true
@@ -352,6 +373,7 @@ func (c *ClientWrapper) NewRoom(roomName string, topic string, inviteList []id.U
 
 	fmt.Println("Created room with ID: " + resp.RoomID)
 	room := c.GetOrCreateRoom(resp.RoomID)
+	c.logger.Info().Msg("Created room with ID:" + room.ID.String())
 
 	return room, nil
 }
@@ -373,6 +395,7 @@ func (c *ClientWrapper) ExitRoom(roomID id.RoomID, reason string) error {
 
 	if err != nil {
 		fmt.Errorf("could not leave room: %w", err)
+		c.logger.Error().Msg("Could not leave room due to: " + err.Error())
 		return err
 	}
 
@@ -381,6 +404,7 @@ func (c *ClientWrapper) ExitRoom(roomID id.RoomID, reason string) error {
 	node.Unload()
 	fmt.Println(resp)
 	fmt.Println("Left room with ID: " + roomID)
+	c.logger.Info().Msg("Left room with ID: " + roomID.String())
 
 	return nil
 }
@@ -396,6 +420,7 @@ func (c *ClientWrapper) ForgetRoom(roomID id.RoomID) error {
 
 	fmt.Println(resp)
 	fmt.Println("Forgot room with ID: " + roomID)
+	c.logger.Info().Msg("Forgot room with ID: " + roomID.String())
 	return nil
 }
 
@@ -408,10 +433,11 @@ func (c *ClientWrapper) InviteUser(roomID id.RoomID, reason, user string) error 
 
 	if err != nil {
 		fmt.Println(err)
+		c.logger.Error().Msg(err.Error())
 		return err
 	} else {
-		fmt.Println(resp)
 		fmt.Println("Successfully Invited " + user + " to the room with id: " + roomID.String())
+		c.logger.Info().Msg("Successfully Invited " + user + " to the room with id: " + roomID.String())
 	}
 
 	return nil
@@ -423,6 +449,7 @@ func (c *ClientWrapper) RoomsJoined() ([]id.RoomID, error) {
 
 	if err != nil {
 		fmt.Println(err)
+		c.logger.Error().Msg(err.Error())
 		return nil, err
 	} else {
 		for i := 0; i < len(resp.JoinedRooms); i++ {
@@ -441,14 +468,14 @@ func (c *ClientWrapper) JoinRoom(roomIdOrAlias, server string, content interface
 
 	if err != nil {
 		fmt.Println(err)
+		c.logger.Error().Msg(err.Error())
 		return nil, err
-	} else {
-		fmt.Println(resp)
 	}
 
 	room := c.GetOrCreateRoom(resp.RoomID)
 	room.HasLeft = false
 	fmt.Println("Successfully joined room with id: " + roomIdOrAlias)
+	c.logger.Info().Msg("Successfully joined room with ID: " + roomIdOrAlias)
 
 	return room, nil
 }
@@ -459,6 +486,7 @@ func (c *ClientWrapper) JoinedMembers(roomID id.RoomID) error {
 
 	if err != nil {
 		fmt.Println(err)
+		c.logger.Error().Msg(err.Error())
 		return err
 	} else {
 		for key := range resp.Joined { //print out the room members' display names
@@ -492,6 +520,7 @@ func (c *ClientWrapper) SendMessageEvent(evt *events.Event) (id.EventID, error) 
 	}
 
 	fmt.Println("Sent message with event ID: " + resp.EventID)
+	c.logger.Info().Msg("Sent message with event ID: " + resp.EventID.String())
 	return resp.EventID, nil
 }
 
@@ -503,6 +532,8 @@ func (c *ClientWrapper) SendStateEvent(evt *events.Event) (id.EventID, error) {
 	if err != nil {
 		return "", err
 	}
+
+	c.logger.Info().Msg("Sent message with event ID: " + resp.EventID.String())
 	return resp.EventID, nil
 }
 
