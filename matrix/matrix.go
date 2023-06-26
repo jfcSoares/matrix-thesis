@@ -1,6 +1,7 @@
 package matrix
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"matrix/config"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"maunium.net/go/gomuks/matrix/muksevt"
 	"maunium.net/go/gomuks/matrix/rooms"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/crypto"
@@ -415,6 +417,7 @@ func (c *ClientWrapper) ForgetRoom(roomID id.RoomID) error {
 	resp, err := c.client.ForgetRoom(roomID)
 
 	if err != nil {
+		c.logger.Error().Err(err).Msg("could not forget room")
 		return err
 	}
 
@@ -433,7 +436,7 @@ func (c *ClientWrapper) InviteUser(roomID id.RoomID, reason, user string) error 
 
 	if err != nil {
 		fmt.Println(err)
-		c.logger.Error().Msg(err.Error())
+		c.logger.Error().Err(err).Msg("could not invite user " + user + " to room with ID: " + roomID.String())
 		return err
 	}
 
@@ -449,7 +452,7 @@ func (c *ClientWrapper) RoomsJoined() ([]id.RoomID, error) {
 
 	if err != nil {
 		fmt.Println(err)
-		c.logger.Error().Msg(err.Error())
+		c.logger.Error().Err(err).Msg("could not list the rooms the user is joined to")
 		return nil, err
 	} else {
 		for i := 0; i < len(resp.JoinedRooms); i++ {
@@ -468,7 +471,7 @@ func (c *ClientWrapper) JoinRoom(roomIdOrAlias, server string, content interface
 
 	if err != nil {
 		fmt.Println(err)
-		c.logger.Error().Msg(err.Error())
+		c.logger.Error().Err(err).Msg("could not join room with the given id or alias")
 		return nil, err
 	}
 
@@ -486,7 +489,7 @@ func (c *ClientWrapper) JoinedMembers(roomID id.RoomID) error {
 
 	if err != nil {
 		fmt.Println(err)
-		c.logger.Error().Msg(err.Error())
+		c.logger.Error().Err(err).Msg("could not list the members of the given room")
 		return err
 	} else {
 		for key := range resp.Joined { //print out the room members' display names
@@ -516,6 +519,7 @@ func (c *ClientWrapper) SendMessageEvent(evt *events.Event) (id.EventID, error) 
 	resp, err := c.client.SendMessageEvent(evt.RoomID, evt.Type, &evt.Content, mautrix.ReqSendEvent{TransactionID: evt.Unsigned.TransactionID})
 	if err != nil {
 		fmt.Println(err)
+		c.logger.Error().Err(err).Msg("could not send message event")
 		return "", err
 	}
 
@@ -530,6 +534,7 @@ func (c *ClientWrapper) SendStateEvent(evt *events.Event) (id.EventID, error) {
 
 	resp, err := c.client.SendStateEvent(evt.RoomID, evt.Type, *evt.StateKey, &evt.Content)
 	if err != nil {
+		c.logger.Error().Err(err).Msg("could not send the specified event")
 		return "", err
 	}
 
@@ -543,6 +548,7 @@ func (c *ClientWrapper) SendReadReceipt(evt *events.Event) error {
 
 	if err != nil {
 		fmt.Println(err)
+		c.logger.Error().Err(err).Msg("could not send read receipt")
 		return err
 	}
 
@@ -554,6 +560,7 @@ func (c *ClientWrapper) GetState(roomID id.RoomID) (*mautrix.RoomStateMap, error
 	resp, err := c.client.State(roomID)
 
 	if err != nil {
+		c.logger.Error().Err(err).Msg("could not get state for the given room")
 		return nil, err
 	}
 
@@ -563,6 +570,8 @@ func (c *ClientWrapper) GetState(roomID id.RoomID) (*mautrix.RoomStateMap, error
 /*func (c *ClientWrapper) SendToDevice(eventType event.Type, req *mautrix.ReqSendToDevice) (*mautrix.RespSendToDevice, error) {
 	probably will not need this
 }*/
+
+//****************** EVENT HANDLERS *********************//
 
 // HandleMessage is the event handler for the m.room.message timeline event.
 func (c *ClientWrapper) HandleMessage(source mautrix.EventSource, mxEvent *event.Event) {
@@ -581,4 +590,30 @@ func (c *ClientWrapper) HandleMessage(source mautrix.EventSource, mxEvent *event
 
 	//Açoes para o UI talvez
 
+}
+
+func (c *ClientWrapper) HandleEncrypted(source mautrix.EventSource, mxEvent *event.Event) {
+	evt, err := c.crypto.DecryptMegolmEvent(context.TODO(), mxEvent)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("failed to decrypt function")
+		mxEvent.Type = muksevt.EventBadEncrypted
+		origContent, _ := mxEvent.Content.Parsed.(*event.EncryptedEventContent)
+		mxEvent.Content.Parsed = &muksevt.BadEncryptedContent{
+			Original: origContent,
+			Reason:   err.Error(),
+		}
+		c.HandleMessage(source, mxEvent)
+		return
+	}
+	if evt.Type.IsInRoomVerification() {
+		err := c.crypto.ProcessInRoomVerification(evt)
+		if err != nil {
+			c.logger.Error().Msg("[Crypto/Error] Failed to process in-room verification event " + evt.ID.String() + " of type " + evt.Type.String() + ":" + err.Error())
+
+		} else {
+			c.logger.Info().Msg("[Crypto/Debug] Processed in-room verification event " + evt.ID.String() + " of type " + evt.Type.String())
+		}
+	} else {
+		c.HandleMessage(source, evt)
+	}
 }
