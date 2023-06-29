@@ -4,18 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"matrix/config"
 	"matrix/matrix/events"
 	"os"
 	"time"
 
 	"github.com/rs/zerolog"
-	"maunium.net/go/gomuks/matrix/muksevt"
-	"maunium.net/go/gomuks/matrix/rooms"
+
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/crypto"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"maunium.net/go/gomuks/config"
+	"maunium.net/go/gomuks/matrix"
+	"maunium.net/go/gomuks/matrix/muksevt"
+	"maunium.net/go/gomuks/matrix/rooms"
 )
 
 type ClientWrapper struct {
@@ -23,17 +26,19 @@ type ClientWrapper struct {
 
 	syncer *mautrix.DefaultSyncer //responsible for syncing data with server
 
-	//history *mautrix.MemorySyncStore //tracks session data as in memory data structures
+	history *matrix.HistoryManager //responsible for storing event history
 
-	crypto *crypto.OlmMachine
+	crypto *crypto.OlmMachine //Main struct to handle Matrix E2EE
 
-	config *config.Config
+	config *config.Config // persist user account information and configurations
 
 	logger zerolog.Logger
 
-	rooms   *rooms.RoomCache
+	//rooms *rooms.RoomCache //database for room information -> commented out, it is sitting on the config object now
+
 	running bool
-	stop    chan bool
+
+	stop chan bool
 }
 
 var MinSpecVersion = mautrix.SpecV11
@@ -48,18 +53,19 @@ var (
 func NewWrapper() *ClientWrapper {
 
 	c := &ClientWrapper{
+		//config: config.NewConfig() decide how to load directories into this
+		logger:  NewWrapper().initLogger(),
 		running: false,
 	}
 
-	c.initLogger()
 	return c
 }
 
-func (c *ClientWrapper) initLogger() {
+func (c *ClientWrapper) initLogger() zerolog.Logger {
 	log := zerolog.New(os.Stderr).With().Timestamp().Logger()
 	log = log.Level(zerolog.InfoLevel)
 
-	c.logger = log
+	return log
 }
 
 // initializes the client and connects to the specified homeserver
@@ -89,17 +95,17 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 
 	err = c.initCrypto()
 	if err != nil {
-		c.logger.Error().Msg("failed to initialize crypto: " + err.Error())
+		c.logger.Err(err).Msg("failed to initialize crypto")
 		return fmt.Errorf("failed to initialize crypto: %w", err)
 	}
 
-	/*
-		if c.history == nil {
-			c.history, err = mautrix.NewMemorySyncStore()
-			if err != nil {
-				return fmt.Errorf("failed to initialize history: %w", err)
-			}
-		}*/
+	if c.history == nil {
+		c.history, err = matrix.NewHistoryManager(c.config.HistoryPath)
+		if err != nil {
+			c.logger.Err(err).Msg("failed to initialize history")
+			return fmt.Errorf("failed to initialize history: %w", err)
+		}
+	}
 
 	/*allowInsecure := len(os.Getenv("CLIENT_ALLOW_INSECURE_CONNECTIONS")) > 0
 	if allowInsecure {
@@ -157,7 +163,7 @@ func (c *ClientWrapper) Initialized() bool {
 func (c *ClientWrapper) Login(user, password string) error {
 	resp, err := c.client.GetLoginFlows()
 	if err != nil {
-		c.logger.Error().Msg("could not get check the login flows supported by the homeserver")
+		c.logger.Error().Msg("could not check the login flows supported by the homeserver")
 		return err
 	}
 
@@ -214,9 +220,10 @@ func (c *ClientWrapper) concludeLogin(resp *mautrix.RespLogin) {
 	c.config.DeviceID = resp.DeviceID
 	c.config.AccessToken = resp.AccessToken
 	if resp.WellKnown != nil && len(resp.WellKnown.Homeserver.BaseURL) > 0 {
-		c.config.Homeserver = resp.WellKnown.Homeserver.BaseURL
+		c.config.HS = resp.WellKnown.Homeserver.BaseURL
 	}
 
+	c.config.Save()
 	//go c.Start()
 }
 
@@ -225,8 +232,10 @@ func (c *ClientWrapper) Logout() {
 	c.logger.Info().Msg("Logging out...")
 	c.client.Logout()
 	c.Stop()
-	c.client.ClearCredentials() //for now, since we are not persisting sessions
+	c.config.DeleteSession()
+	c.client.ClearCredentials()
 	c.client = nil
+	c.crypto = nil
 }
 
 func (c *ClientWrapper) Start() {
@@ -254,7 +263,6 @@ func (c *ClientWrapper) Start() {
 					fmt.Print("Sync() errored with ", err, " -> logging out")
 					c.logger.Error().Msg("Access token was not recognized -> logging out")
 					c.Logout()
-					//if this happens, something is probably severely wrong with the device, completely kill the session?
 				} else {
 					fmt.Print("Sync() errored", err)
 					c.logger.Error().Msg("Sync() call errored with: " + err.Error())
@@ -278,12 +286,13 @@ func (c *ClientWrapper) Stop() {
 		default:
 		}
 		c.client.StopSync()
-		/*fmt.Print("Closing history manager...")
+		fmt.Print("Closing history manager...")
 		err := c.history.Close()
 		if err != nil {
-			debug.Print("Error closing history manager:", err)
+			fmt.Print("Error closing history manager:", err)
 		}
-		c.history = nil*/
+		c.history = nil
+
 		if c.crypto != nil {
 			c.logger.Info().Msg("Flushing crypto store")
 			err := c.crypto.FlushStore()
@@ -500,21 +509,160 @@ func (c *ClientWrapper) JoinedMembers(roomID id.RoomID) error {
 	return nil
 }
 
+func (c *ClientWrapper) FetchMembers(room *rooms.Room) error {
+	fmt.Print("Fetching member list for", room.ID)
+	members, err := c.client.Members(room.ID, mautrix.ReqMembers{At: room.LastPrevBatch})
+	if err != nil {
+		c.logger.Err(err).Msg("Could not fetch members of room " + room.ID.String())
+		return err
+	}
+	fmt.Printf("Fetched %d members for %s", len(members.Chunk), room.ID)
+	for _, evt := range members.Chunk {
+		err := evt.Content.ParseRaw(evt.Type)
+		if err != nil {
+			fmt.Printf("Failed to parse member event of %s: %v", evt.GetStateKey(), err)
+			c.logger.Err(err).Msg("Failed to parse member event of " + evt.GetStateKey())
+			continue
+		}
+		room.UpdateState(evt)
+	}
+	room.MembersFetched = true
+	return nil
+}
+
+// GetHistory fetches room history.
+func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64) ([]*muksevt.Event, uint64, error) {
+	events, newDBPointer, err := c.history.Load(room, limit, dbPointer) //tries to obtain event history of the given room locally
+	if err != nil {
+		c.logger.Err(err).Msg("Could not load events of room " + room.ID.String() + " from local cache")
+		return nil, dbPointer, err
+	}
+
+	if len(events) > 0 {
+		fmt.Printf("Loaded %d events for %s from local cache", len(events), room.ID)
+		c.logger.Info().Msg("Loaded " + string(len(events)) + "from local cache of room with ID: " + room.ID.String())
+		return events, newDBPointer, nil
+	}
+
+	resp, err := c.client.Messages(room.ID, room.PrevBatch, "", 'b', nil, limit) //otherwise fetch history from server
+	if err != nil {
+		c.logger.Err(err).Msg("Could not load events of room " + room.ID.String() + " from homeserver")
+		return nil, dbPointer, err
+	}
+
+	fmt.Printf("Loaded %d events for %s from server from %s to %s", len(resp.Chunk), room.ID, resp.Start, resp.End)
+	for i, evt := range resp.Chunk {
+		err := evt.Content.ParseRaw(evt.Type)
+		if err != nil {
+			fmt.Printf("Failed to unmarshal content of event %s (type %s) by %s in %s: %v\n%s", evt.ID, evt.Type.Repr(), evt.Sender, evt.RoomID, err, string(evt.Content.VeryRaw))
+			c.logger.Err(err).Msg("Failed to unmarshal content of event " + evt.ID.String() + " (type " + evt.Type.Repr() + ") by " + string(evt.Sender) + " in " + string(evt.RoomID) + " with content:" + string(evt.Content.VeryRaw))
+		}
+
+		if evt.Type == event.EventEncrypted {
+			if c.crypto == nil {
+				evt.Type = muksevt.EventEncryptionUnsupported
+				origContent, _ := evt.Content.Parsed.(*event.EncryptedEventContent)
+				evt.Content.Parsed = muksevt.EncryptionUnsupportedContent{Original: origContent}
+			} else {
+				decrypted, err := c.crypto.DecryptMegolmEvent(context.TODO(), evt)
+				if err != nil {
+					fmt.Printf("Failed to decrypt event %s: %v", evt.ID, err)
+					c.logger.Err(err).Msg("Failed to decrypt event " + evt.ID.String())
+					evt.Type = muksevt.EventBadEncrypted
+					origContent, _ := evt.Content.Parsed.(*event.EncryptedEventContent)
+					evt.Content.Parsed = &muksevt.BadEncryptedContent{
+						Original: origContent,
+						Reason:   err.Error(),
+					}
+				} else {
+					resp.Chunk[i] = decrypted
+				}
+			}
+		}
+	}
+
+	//update the local cache for the given room
+	for _, evt := range resp.State {
+		room.UpdateState(evt)
+	}
+	room.PrevBatch = resp.End
+	c.config.Rooms.Put(room)
+	if len(resp.Chunk) == 0 {
+		return []*muksevt.Event{}, dbPointer, nil
+	}
+	// TODO newDBPointer isn't accurate in this case yet, fix later
+	events, newDBPointer, err = c.history.Prepend(room, resp.Chunk) //update event history
+	if err != nil {
+		return nil, dbPointer, err
+	}
+	return events, dbPointer, nil
+}
+
+// Fetches a specific event of the given room
+func (c *ClientWrapper) GetEvent(room *rooms.Room, eventID id.EventID) (*muksevt.Event, error) {
+	evt, err := c.history.Get(room, eventID) //First tries to obtain the event from the local cache
+	if err != nil && err != matrix.EventNotFoundError {
+		fmt.Printf("Failed to get event %s from local cache: %v", eventID, err)
+		c.logger.Err(err).Msg("Failed to get event " + eventID.String() + " from local cache")
+	} else if evt != nil {
+		fmt.Printf("Found event %s in local cache", eventID)
+		c.logger.Info().Msg("Found event " + eventID.String() + " in local cache")
+		return evt, err
+	}
+
+	mxEvent, err := c.client.GetEvent(room.ID, eventID) //Otherwise ask the server for it
+	if err != nil {
+		c.logger.Err(err).Msg("Could not get event")
+		return nil, err
+	}
+
+	err = mxEvent.Content.ParseRaw(mxEvent.Type)
+	if err != nil {
+		c.logger.Err(err).Msg("Failed to unmarshal content of event " + evt.ID.String() + " (type " + evt.Type.Repr() + ") by " + string(evt.Sender) + " in " + string(evt.RoomID) + " with content:" + string(evt.Content.VeryRaw))
+		return nil, err
+	}
+	fmt.Printf("Loaded event %s from server", eventID)
+	c.logger.Info().Msg("Loaded event " + eventID.String() + " from server")
+	return muksevt.Wrap(mxEvent), nil
+}
+
 // GetOrCreateRoom gets the room instance stored in the session.
 func (c *ClientWrapper) GetOrCreateRoom(roomID id.RoomID) *rooms.Room {
-	return c.rooms.GetOrCreate(roomID)
+	return c.config.Rooms.GetOrCreate(roomID)
 }
 
 // GetRoom gets the room instance stored in the session.
 func (c *ClientWrapper) GetRoom(roomID id.RoomID) *rooms.Room {
-	return c.rooms.Get(roomID)
+	return c.config.Rooms.Get(roomID)
 }
 
 //*************************** EVENTS *******************************//
 
 // Sends a message event into a room
 func (c *ClientWrapper) SendMessageEvent(evt *events.Event) (id.EventID, error) {
-	//TODO: Encryption flow before sending the event
+	room := c.GetRoom(evt.RoomID)
+	if room != nil && room.Encrypted && c.crypto != nil && evt.Type != event.EventReaction {
+		encrypted, err := c.crypto.EncryptMegolmEvent(context.TODO(), evt.RoomID, evt.Type, &evt.Content)
+		if err != nil {
+			if isBadEncryptError(err) {
+				c.logger.Error().Err(err).Msg("Could not encrypt the specified event")
+				return "", err
+			}
+			fmt.Print("Got", err, "while trying to encrypt message, sharing group session and trying again...")
+			err = c.crypto.ShareGroupSession(context.TODO(), room.ID, room.GetMemberList())
+			if err != nil {
+				c.logger.Error().Err(err).Msg("Could not share the group session successfully")
+				return "", err
+			}
+			encrypted, err = c.crypto.EncryptMegolmEvent(context.TODO(), evt.RoomID, evt.Type, &evt.Content)
+			if err != nil {
+				c.logger.Error().Err(err).Msg("Could not encrypt the specified event")
+				return "", err
+			}
+		}
+		evt.Type = event.EventEncrypted
+		evt.Content = event.Content{Parsed: encrypted}
+	}
 
 	resp, err := c.client.SendMessageEvent(evt.RoomID, evt.Type, &evt.Content, mautrix.ReqSendEvent{TransactionID: evt.Unsigned.TransactionID})
 	if err != nil {
@@ -583,10 +731,26 @@ func (c *ClientWrapper) HandleMessage(source mautrix.EventSource, mxEvent *event
 		return
 	}
 
-	fmt.Println("Message has reached its handler!")
-	//Possivelmente fazer alguma coisa com o conteudo da mensagem (se for um alerta de intruso por exemplo)
+	events, err := c.history.Append(room, []*event.Event{mxEvent}) //add the newly-received event to room history
+	if err != nil {
+		fmt.Printf("Failed to add event %s to history: %v", mxEvent.ID, err)
+		c.logger.Err(err).Msg("Failed to add event " + mxEvent.ID.String() + " to history")
+	}
 
-	//Persistir num ficheiro o evento se o professor achar necessário
+	evt := events[0]
+	if !c.config.AuthCache.InitialSyncDone {
+		room.LastReceivedMessage = time.Unix(evt.Timestamp/1000, evt.Timestamp%1000*1000)
+		return
+	}
+
+	c.logger.Info().
+		Str("sender", evt.Sender.String()).
+		Str("type", evt.Type.String()).
+		Str("id", evt.ID.String()).
+		Str("body", evt.Content.AsMessage().Body).
+		Msg("Received message")
+
+	//Possivelmente fazer alguma coisa com o conteudo da mensagem (se for um alerta de intruso por exemplo)
 
 	//Açoes para o UI talvez
 
@@ -595,7 +759,7 @@ func (c *ClientWrapper) HandleMessage(source mautrix.EventSource, mxEvent *event
 func (c *ClientWrapper) HandleEncrypted(source mautrix.EventSource, mxEvent *event.Event) {
 	evt, err := c.crypto.DecryptMegolmEvent(context.TODO(), mxEvent)
 	if err != nil {
-		c.logger.Error().Err(err).Msg("failed to decrypt function")
+		c.logger.Error().Err(err).Msg("failed to decrypt event contents")
 		mxEvent.Type = muksevt.EventBadEncrypted
 		origContent, _ := mxEvent.Content.Parsed.(*event.EncryptedEventContent)
 		mxEvent.Content.Parsed = &muksevt.BadEncryptedContent{
@@ -615,5 +779,58 @@ func (c *ClientWrapper) HandleEncrypted(source mautrix.EventSource, mxEvent *eve
 		}
 	} else {
 		c.HandleMessage(source, evt)
+	}
+}
+
+func (c *ClientWrapper) HandleMembership(source mautrix.EventSource, evt *event.Event) {
+	hasLeft := source&mautrix.EventSourceLeave != 0       //if the user has left the room
+	isTimeline := source&mautrix.EventSourceTimeline != 0 //if it is a timeline event
+	if hasLeft {
+		c.GetOrCreateRoom(evt.RoomID).HasLeft = true
+	}
+	isNonTimelineLeave := hasLeft && !isTimeline
+	if !c.config.AuthCache.InitialSyncDone && isNonTimelineLeave {
+		return
+	} else if evt.StateKey != nil && id.UserID(*evt.StateKey) == c.config.UserID {
+		c.processOwnMembershipChange(evt)
+	} else if !isTimeline && (!c.config.AuthCache.InitialSyncDone || hasLeft) {
+		// We don't care about other users' membership events in the initial sync or chats we've left.
+		return
+	}
+
+	c.HandleMessage(source, evt)
+}
+
+func (c *ClientWrapper) processOwnMembershipChange(evt *event.Event) {
+	membership := evt.Content.AsMember().Membership
+	prevMembership := event.MembershipLeave
+	if evt.Unsigned.PrevContent != nil {
+		prevMembership = evt.Unsigned.PrevContent.AsMember().Membership
+	}
+	fmt.Printf("Processing own membership change: %s->%s in %s", prevMembership, membership, evt.RoomID)
+	if membership == prevMembership {
+		return
+	}
+	room := c.GetRoom(evt.RoomID)
+	switch membership {
+	case "join":
+		room.HasLeft = false
+		/*if c.config.AuthCache.InitialSyncDone {
+			c.ui.MainView().UpdateTags(room)
+		}*/
+		fallthrough
+	case "invite":
+		/*if c.config.AuthCache.InitialSyncDone {
+			c.ui.MainView().AddRoom(room)
+		}*/
+	case "leave":
+	case "ban":
+		/*if c.config.AuthCache.InitialSyncDone {
+			c.ui.MainView().RemoveRoom(room)
+		}*/
+		room.HasLeft = true
+		room.Unload()
+	default:
+		return
 	}
 }

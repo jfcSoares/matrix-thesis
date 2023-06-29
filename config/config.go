@@ -24,8 +24,8 @@ type Config struct {
 	RoomListPath string `yaml:"room_list_path"`
 	StateDir     string `yaml:"state_dir"`
 
-	/*Preferences UserPreferences        `yaml:"-"`
-	AuthCache   AuthCache              `yaml:"-"`*/
+	/*Preferences UserPreferences        `yaml:"-"`*/
+	//AuthCache AuthCache        `yaml:"-"`
 	Rooms *rooms.RoomCache `yaml:"-"` //not sure if required, for now
 
 	nosave bool
