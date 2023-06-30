@@ -1,12 +1,20 @@
+// As per the terms described in the GNU Affero General Public License, published by
+// the Free Software Foundation, which apply to the contents of the repository
+// (https://github.com/tulir/gomuks), the code present in this file was based off of
+// the matrix.go file in that repository
 package matrix
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"matrix/matrix/events"
 	"os"
+	"strconv"
 	"time"
+
+	"matrix/config"
+	"matrix/matrix/mxevents"
+	"matrix/matrix/rooms"
 
 	"github.com/rs/zerolog"
 
@@ -14,11 +22,6 @@ import (
 	"maunium.net/go/mautrix/crypto"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
-
-	"maunium.net/go/gomuks/config"
-	"maunium.net/go/gomuks/matrix"
-	"maunium.net/go/gomuks/matrix/muksevt"
-	"maunium.net/go/gomuks/matrix/rooms"
 )
 
 type ClientWrapper struct {
@@ -26,7 +29,7 @@ type ClientWrapper struct {
 
 	syncer *mautrix.DefaultSyncer //responsible for syncing data with server
 
-	history *matrix.HistoryManager //responsible for storing event history
+	history *HistoryManager //responsible for storing event history
 
 	crypto *crypto.OlmMachine //Main struct to handle Matrix E2EE
 
@@ -100,7 +103,7 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 	}
 
 	if c.history == nil {
-		c.history, err = matrix.NewHistoryManager(c.config.HistoryPath)
+		c.history, err = NewHistoryManager(c.config.HistoryPath)
 		if err != nil {
 			c.logger.Err(err).Msg("failed to initialize history")
 			return fmt.Errorf("failed to initialize history: %w", err)
@@ -204,7 +207,6 @@ func (c *ClientWrapper) PasswordLogin(user, password string) error {
 		return err
 	}
 
-	c.client.SetCredentials(resp.UserID, resp.AccessToken)
 	c.concludeLogin(resp)
 
 	return nil
@@ -220,7 +222,7 @@ func (c *ClientWrapper) concludeLogin(resp *mautrix.RespLogin) {
 	c.config.DeviceID = resp.DeviceID
 	c.config.AccessToken = resp.AccessToken
 	if resp.WellKnown != nil && len(resp.WellKnown.Homeserver.BaseURL) > 0 {
-		c.config.HS = resp.WellKnown.Homeserver.BaseURL
+		c.config.Homeserver = resp.WellKnown.Homeserver.BaseURL
 	}
 
 	c.config.Save()
@@ -405,9 +407,8 @@ func (c *ClientWrapper) ExitRoom(roomID id.RoomID, reason string) error {
 	}
 
 	if err != nil {
-		fmt.Errorf("could not leave room: %w", err)
 		c.logger.Error().Msg("Could not leave room due to: " + err.Error())
-		return err
+		return fmt.Errorf("could not leave room: %w", err)
 	}
 
 	node := c.GetOrCreateRoom(roomID)
@@ -531,7 +532,7 @@ func (c *ClientWrapper) FetchMembers(room *rooms.Room) error {
 }
 
 // GetHistory fetches room history.
-func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64) ([]*muksevt.Event, uint64, error) {
+func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64) ([]*mxevents.Event, uint64, error) {
 	events, newDBPointer, err := c.history.Load(room, limit, dbPointer) //tries to obtain event history of the given room locally
 	if err != nil {
 		c.logger.Err(err).Msg("Could not load events of room " + room.ID.String() + " from local cache")
@@ -540,7 +541,7 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 
 	if len(events) > 0 {
 		fmt.Printf("Loaded %d events for %s from local cache", len(events), room.ID)
-		c.logger.Info().Msg("Loaded " + string(len(events)) + "from local cache of room with ID: " + room.ID.String())
+		c.logger.Info().Msg("Loaded " + strconv.Itoa(len(events)) + "from local cache of room with ID: " + room.ID.String())
 		return events, newDBPointer, nil
 	}
 
@@ -560,17 +561,17 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 
 		if evt.Type == event.EventEncrypted {
 			if c.crypto == nil {
-				evt.Type = muksevt.EventEncryptionUnsupported
+				evt.Type = mxevents.EventEncryptionUnsupported
 				origContent, _ := evt.Content.Parsed.(*event.EncryptedEventContent)
-				evt.Content.Parsed = muksevt.EncryptionUnsupportedContent{Original: origContent}
+				evt.Content.Parsed = mxevents.EncryptionUnsupportedContent{Original: origContent}
 			} else {
 				decrypted, err := c.crypto.DecryptMegolmEvent(context.TODO(), evt)
 				if err != nil {
 					fmt.Printf("Failed to decrypt event %s: %v", evt.ID, err)
 					c.logger.Err(err).Msg("Failed to decrypt event " + evt.ID.String())
-					evt.Type = muksevt.EventBadEncrypted
+					evt.Type = mxevents.EventBadEncrypted
 					origContent, _ := evt.Content.Parsed.(*event.EncryptedEventContent)
-					evt.Content.Parsed = &muksevt.BadEncryptedContent{
+					evt.Content.Parsed = &mxevents.BadEncryptedContent{
 						Original: origContent,
 						Reason:   err.Error(),
 					}
@@ -588,10 +589,10 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 	room.PrevBatch = resp.End
 	c.config.Rooms.Put(room)
 	if len(resp.Chunk) == 0 {
-		return []*muksevt.Event{}, dbPointer, nil
+		return []*mxevents.Event{}, dbPointer, nil
 	}
 	// TODO newDBPointer isn't accurate in this case yet, fix later
-	events, newDBPointer, err = c.history.Prepend(room, resp.Chunk) //update event history
+	events, _, err = c.history.Prepend(room, resp.Chunk) //update event history
 	if err != nil {
 		return nil, dbPointer, err
 	}
@@ -599,9 +600,9 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 }
 
 // Fetches a specific event of the given room
-func (c *ClientWrapper) GetEvent(room *rooms.Room, eventID id.EventID) (*muksevt.Event, error) {
+func (c *ClientWrapper) GetEvent(room *rooms.Room, eventID id.EventID) (*mxevents.Event, error) {
 	evt, err := c.history.Get(room, eventID) //First tries to obtain the event from the local cache
-	if err != nil && err != matrix.EventNotFoundError {
+	if err != nil && err != EventNotFoundError {
 		fmt.Printf("Failed to get event %s from local cache: %v", eventID, err)
 		c.logger.Err(err).Msg("Failed to get event " + eventID.String() + " from local cache")
 	} else if evt != nil {
@@ -623,7 +624,7 @@ func (c *ClientWrapper) GetEvent(room *rooms.Room, eventID id.EventID) (*muksevt
 	}
 	fmt.Printf("Loaded event %s from server", eventID)
 	c.logger.Info().Msg("Loaded event " + eventID.String() + " from server")
-	return muksevt.Wrap(mxEvent), nil
+	return mxevents.Wrap(mxEvent), nil
 }
 
 // GetOrCreateRoom gets the room instance stored in the session.
@@ -639,7 +640,7 @@ func (c *ClientWrapper) GetRoom(roomID id.RoomID) *rooms.Room {
 //*************************** EVENTS *******************************//
 
 // Sends a message event into a room
-func (c *ClientWrapper) SendMessageEvent(evt *events.Event) (id.EventID, error) {
+func (c *ClientWrapper) SendEvent(evt *mxevents.Event) (id.EventID, error) {
 	room := c.GetRoom(evt.RoomID)
 	if room != nil && room.Encrypted && c.crypto != nil && evt.Type != event.EventReaction {
 		encrypted, err := c.crypto.EncryptMegolmEvent(context.TODO(), evt.RoomID, evt.Type, &evt.Content)
@@ -677,7 +678,7 @@ func (c *ClientWrapper) SendMessageEvent(evt *events.Event) (id.EventID, error) 
 }
 
 // Sends a state event into a room
-func (c *ClientWrapper) SendStateEvent(evt *events.Event) (id.EventID, error) {
+func (c *ClientWrapper) SendStateEvent(evt *mxevents.Event) (id.EventID, error) {
 	//TODO: Encryption flow before sending the event
 
 	resp, err := c.client.SendStateEvent(evt.RoomID, evt.Type, *evt.StateKey, &evt.Content)
@@ -691,7 +692,7 @@ func (c *ClientWrapper) SendStateEvent(evt *events.Event) (id.EventID, error) {
 }
 
 // Sends a read receipt regarding the event in the arguments
-func (c *ClientWrapper) SendReadReceipt(evt *events.Event) error {
+func (c *ClientWrapper) SendReadReceipt(evt *mxevents.Event) error {
 	err := c.client.SendReceipt(evt.RoomID, evt.ID, event.ReceiptTypeRead, nil)
 
 	if err != nil {
@@ -760,9 +761,9 @@ func (c *ClientWrapper) HandleEncrypted(source mautrix.EventSource, mxEvent *eve
 	evt, err := c.crypto.DecryptMegolmEvent(context.TODO(), mxEvent)
 	if err != nil {
 		c.logger.Error().Err(err).Msg("failed to decrypt event contents")
-		mxEvent.Type = muksevt.EventBadEncrypted
+		mxEvent.Type = mxevents.EventBadEncrypted
 		origContent, _ := mxEvent.Content.Parsed.(*event.EncryptedEventContent)
-		mxEvent.Content.Parsed = &muksevt.BadEncryptedContent{
+		mxEvent.Content.Parsed = &mxevents.BadEncryptedContent{
 			Original: origContent,
 			Reason:   err.Error(),
 		}

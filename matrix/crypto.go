@@ -47,10 +47,6 @@ func (c *ClientWrapper) initCrypto() error {
 
 }
 
-func saveStoreData() error {
-	return nil
-}
-
 func (c *ClientWrapper) cryptoOnLogin() {
 	sqlStore, ok := c.crypto.CryptoStore.(*crypto.SQLCryptoStore)
 	if !ok {

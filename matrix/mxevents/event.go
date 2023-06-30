@@ -1,4 +1,8 @@
-package events
+// As per the terms described in the GNU Affero General Public License, published by
+// the Free Software Foundation, which apply to the contents of the repository
+// (https://github.com/tulir/gomuks), the code present in this file was based off of
+// the event.go file in that repository
+package mxevents
 
 import (
 	"maunium.net/go/mautrix/event"

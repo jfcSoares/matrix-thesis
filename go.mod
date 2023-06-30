@@ -5,7 +5,7 @@ go 1.20
 require github.com/matrix-org/gomatrix v0.0.0-20220926102614-ceba4d9f7530
 
 require (
-	github.com/gabriel-vasile/mimetype v1.4.1 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
 	github.com/gdamore/encoding v1.0.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect

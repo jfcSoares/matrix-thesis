@@ -2,7 +2,7 @@ package main
 
 import (
 	matrix "matrix/matrix"
-	"matrix/matrix/events"
+	"matrix/matrix/mxevents"
 
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -20,12 +20,12 @@ func main() {
 	rooms, _ := c.RoomsJoined()
 	c.JoinedMembers(rooms[0])
 
-	content := *&event.MessageEventContent{
+	content := &event.MessageEventContent{
 		MsgType: event.MsgText,
 		Body:    "Hello World!",
 	}
 
-	evt := events.Wrap(&event.Event{
+	evt := mxevents.Wrap(&event.Event{
 		ID:       id.EventID(c.Client().TxnID()),
 		Sender:   c.Client().UserID,
 		Type:     event.EventMessage,
@@ -34,7 +34,7 @@ func main() {
 		Unsigned: event.Unsigned{TransactionID: c.Client().TxnID()},
 	})
 
-	c.SendMessageEvent(evt)
+	c.SendEvent(evt)
 
 	//<-c.IsStopped()
 	c.Logout()
