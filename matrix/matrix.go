@@ -57,16 +57,18 @@ func NewWrapper() *ClientWrapper {
 
 	c := &ClientWrapper{
 		//config: config.NewConfig() decide how to load directories into this
-		logger:  NewWrapper().initLogger(),
 		running: false,
 	}
 
+	c.initLogger()
 	return c
 }
 
 func (c *ClientWrapper) initLogger() zerolog.Logger {
 	log := zerolog.New(os.Stderr).With().Timestamp().Logger()
 	log = log.Level(zerolog.InfoLevel)
+
+	c.logger = log
 
 	return log
 }
@@ -80,14 +82,13 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 		c.crypto = nil
 	}
 
+	//if client session was persisted
 	/*var mxid id.UserID
 	var accessToken string
-	if len(c.client.AccessToken) > 0 { //if a a client's credentials are still saved
-		accessToken = c.client.AccessToken
-		mxid = c.client.UserID
-	} else {
-		mxid = userID
-	}*/ //once, or if, the sessions are persisted through several logins
+	if len(c.config.AccessToken) > 0 {
+		accessToken = c.config.AccessToken
+		mxid = c.config.UserID
+	}*/
 
 	var err error
 	c.client, err = mautrix.NewClient("https://lpgains.duckdns.org", "", "")
@@ -151,6 +152,10 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 // Client returns the underlying matrix Client.
 func (c *ClientWrapper) Client() *mautrix.Client {
 	return c.client
+}
+
+func (c *ClientWrapper) Crypto() *crypto.OlmMachine {
+	return c.crypto
 }
 
 func (c *ClientWrapper) IsStopped() chan bool {
@@ -306,13 +311,14 @@ func (c *ClientWrapper) Stop() {
 }
 
 // OnLogin initializes the syncer and updates the room list.
-/*func (c *ClientWrapper) OnLogin() {
-	//c.cryptoOnLogin()
+func (c *ClientWrapper) OnLogin() {
+	c.cryptoOnLogin()
 	//c.ui.OnLogin()
 
 	c.client.Store = c.config
 
 	c.logger.Info().Msg("Initializing syncer")
+	//Instantiate syncer and define event handlers
 	c.syncer = mautrix.NewDefaultSyncer()
 	if c.crypto != nil {
 		c.syncer.OnSync(c.crypto.ProcessSyncResponse)
@@ -320,7 +326,7 @@ func (c *ClientWrapper) Stop() {
 			// Don't spam the crypto module with member events of an initial sync
 			// TODO invalidate all group sessions when clearing cache?
 			if c.config.AuthCache.InitialSyncDone {
-				c.crypto.HandleMemberEvent(evt)
+				c.crypto.HandleMemberEvent(source, evt)
 			}
 		})
 		c.syncer.OnEventType(event.EventEncrypted, c.HandleEncrypted)
@@ -330,17 +336,18 @@ func (c *ClientWrapper) Stop() {
 	c.syncer.OnEventType(event.EventMessage, c.HandleMessage)
 	c.syncer.OnEventType(event.EventSticker, c.HandleMessage)
 	c.syncer.OnEventType(event.EventReaction, c.HandleMessage)
-	c.syncer.OnEventType(event.EventRedaction, c.HandleRedaction)
+	//c.syncer.OnEventType(event.EventRedaction, c.HandleRedaction)
 	c.syncer.OnEventType(event.StateAliases, c.HandleMessage)
 	c.syncer.OnEventType(event.StateCanonicalAlias, c.HandleMessage)
 	c.syncer.OnEventType(event.StateTopic, c.HandleMessage)
 	c.syncer.OnEventType(event.StateRoomName, c.HandleMessage)
 	c.syncer.OnEventType(event.StateMember, c.HandleMembership)
-	c.syncer.OnEventType(event.EphemeralEventReceipt, c.HandleReadReceipt)
+	/*c.syncer.OnEventType(event.EphemeralEventReceipt, c.HandleReadReceipt)
 	c.syncer.OnEventType(event.EphemeralEventTyping, c.HandleTyping)
 	c.syncer.OnEventType(event.AccountDataDirectChats, c.HandleDirectChatInfo)
 	c.syncer.OnEventType(event.AccountDataPushRules, c.HandlePushRules)
-	c.syncer.OnEventType(event.AccountDataRoomTags, c.HandleTag)
+	c.syncer.OnEventType(event.AccountDataRoomTags, c.HandleTag)*/
+	//commented out the handlers for unnecessary features for now
 	//TODO: Add custom event handler for offline comms maybe?
 	/*c.syncer.InitDoneCallback = func() {
 		fmt.Print("Initial sync done")
@@ -353,7 +360,7 @@ func (c *ClientWrapper) Stop() {
 		c.config.Rooms.ForceClean()
 		fmt.Print("Saving all data")
 		c.config.SaveAll()
-		debug.Print("Adding rooms to UI")
+		fmt.Print("Adding rooms to UI")
 		c.ui.MainView().SetRooms(c.config.Rooms)
 		c.ui.Render()
 		// The initial sync can be a bit heavy, so we force run the GC here
@@ -361,13 +368,13 @@ func (c *ClientWrapper) Stop() {
 		fmt.Println("Running GC")
 		runtime.GC()
 		dbg.FreeOSMemory()
-	}*
+	}*/
 	//possibly some interface code as well later?
 
 	c.client.Syncer = c.syncer
 
 	fmt.Println("OnLogin() done.")
-}*/
+}
 
 //*************************** ROOMS *******************************//
 
@@ -602,7 +609,7 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 // Fetches a specific event of the given room
 func (c *ClientWrapper) GetEvent(room *rooms.Room, eventID id.EventID) (*mxevents.Event, error) {
 	evt, err := c.history.Get(room, eventID) //First tries to obtain the event from the local cache
-	if err != nil && err != EventNotFoundError {
+	if err != nil && err != ErrEventNotFound {
 		fmt.Printf("Failed to get event %s from local cache: %v", eventID, err)
 		c.logger.Err(err).Msg("Failed to get event " + eventID.String() + " from local cache")
 	} else if evt != nil {
@@ -781,6 +788,13 @@ func (c *ClientWrapper) HandleEncrypted(source mautrix.EventSource, mxEvent *eve
 	} else {
 		c.HandleMessage(source, evt)
 	}
+}
+
+func (c *ClientWrapper) HandleEncryptedUnsupported(source mautrix.EventSource, mxEvent *event.Event) {
+	mxEvent.Type = mxevents.EventEncryptionUnsupported
+	origContent, _ := mxEvent.Content.Parsed.(*event.EncryptedEventContent)
+	mxEvent.Content.Parsed = mxevents.EncryptionUnsupportedContent{Original: origContent}
+	c.HandleMessage(source, mxEvent)
 }
 
 func (c *ClientWrapper) HandleMembership(source mautrix.EventSource, evt *event.Event) {
