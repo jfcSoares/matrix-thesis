@@ -1,7 +1,4 @@
-// As per the terms described in the GNU Affero General Public License, published by
-// the Free Software Foundation, which apply to the contents of the repository
-// (https://github.com/tulir/gomuks), the code present in this file was based off of
-// the matrix.go file in that repository
+// Based on https://github.com/tulir/gomuks/blob/master/matrix/matrix.go
 package matrix
 
 import (
@@ -247,7 +244,7 @@ func (c *ClientWrapper) Logout() {
 
 func (c *ClientWrapper) Start() {
 
-	//c.OnLogin() Initialize the syncer
+	c.OnLogin() //Initialize the syncer
 
 	if c.client == nil {
 		return
@@ -318,8 +315,8 @@ func (c *ClientWrapper) OnLogin() {
 	c.client.Store = c.config
 
 	c.logger.Info().Msg("Initializing syncer")
-	//Instantiate syncer and define event handlers
-	c.syncer = mautrix.NewDefaultSyncer()
+	//Instantiate syncer and assign event handlers to corresponding event types
+	c.syncer = mautrix.NewDefaultSyncer() //may try with default syncer for now, but probably will go with
 	if c.crypto != nil {
 		c.syncer.OnSync(c.crypto.ProcessSyncResponse)
 		c.syncer.OnEventType(event.StateMember, func(source mautrix.EventSource, evt *event.Event) {
@@ -361,8 +358,8 @@ func (c *ClientWrapper) OnLogin() {
 		fmt.Print("Saving all data")
 		c.config.SaveAll()
 		fmt.Print("Adding rooms to UI")
-		c.ui.MainView().SetRooms(c.config.Rooms)
-		c.ui.Render()
+		//c.ui.MainView().SetRooms(c.config.Rooms)
+		//c.ui.Render()
 		// The initial sync can be a bit heavy, so we force run the GC here
 		// after cleaning up rooms from memory above.
 		fmt.Println("Running GC")
