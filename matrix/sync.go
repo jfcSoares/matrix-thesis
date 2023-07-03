@@ -4,8 +4,8 @@ package matrix
 
 import (
 	"fmt"
-	"matrix/matrix/rooms"
 	"sync"
+	"thesgo/matrix/rooms"
 	"time"
 
 	"maunium.net/go/mautrix"

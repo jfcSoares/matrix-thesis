@@ -24,8 +24,8 @@ import (
 	"encoding/gob"
 	"errors"
 
-	"matrix/matrix/mxevents"
-	"matrix/matrix/rooms"
+	"thesgo/matrix/mxevents"
+	"thesgo/matrix/rooms"
 
 	sync "github.com/sasha-s/go-deadlock"
 	bolt "go.etcd.io/bbolt"

@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"matrix/config"
-	"matrix/matrix/mxevents"
-	"matrix/matrix/rooms"
+	"thesgo/config"
+	"thesgo/matrix/mxevents"
+	"thesgo/matrix/rooms"
 
 	"github.com/rs/zerolog"
 

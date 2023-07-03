@@ -21,7 +21,7 @@ import (
 
 	"go.mau.fi/tcell"
 
-	"matrix/matrix/rooms"
+	"thesgo/matrix/rooms"
 )
 
 type AuthCache struct {

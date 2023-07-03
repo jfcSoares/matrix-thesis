@@ -1,8 +1,8 @@
 package main
 
 import (
-	matrix "matrix/matrix"
-	"matrix/matrix/mxevents"
+	matrix "thesgo/matrix"
+	"thesgo/matrix/mxevents"
 
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
