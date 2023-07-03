@@ -1,7 +1,4 @@
-//As per the terms described in the GNU Affero General Public License, published by
-// the Free Software Foundation, which apply to the contents of the repository
-// (https://github.com/tulir/gomuks), the code present in this file was based off of
-// the roomcache.go file in that repository
+// Based on https://github.com/tulir/gomuks/blob/master/matrix/rooms/roomcache.go
 
 package rooms
 

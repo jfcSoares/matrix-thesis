@@ -1,7 +1,4 @@
-// As per the terms described in the GNU Affero General Public License, published by
-// the Free Software Foundation, which apply to the contents of the repository
-// (https://github.com/tulir/gomuks), the code present in this file was based off of
-// the config.go file in that repository
+// Based on https://github.com/tulir/gomuks/blob/master/config/config.go
 
 package config
 
@@ -112,7 +109,7 @@ type Config struct {
 	CacheDir     string `yaml:"cache_dir"`
 	HistoryPath  string `yaml:"history_path"`
 	RoomListPath string `yaml:"room_list_path"`
-	MediaDir     string `yaml:"media_dir"` //can be
+	MediaDir     string `yaml:"media_dir"` //will not be necessary
 	StateDir     string `yaml:"state_dir"`
 
 	Preferences UserPreferences        `yaml:"-"`
