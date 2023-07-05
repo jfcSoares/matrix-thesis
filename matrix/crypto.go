@@ -38,6 +38,7 @@ func (c *ClientWrapper) initCrypto() error {
 	}*/
 
 	crypt := crypto.NewOlmMachine(c.client, &log, cryptoStore, c.config.Rooms)
+	//crypt.AcceptVerificationFrom -> pode ser necessario dar override?
 	c.crypto = crypt
 	err = c.crypto.Load()
 	if err != nil {

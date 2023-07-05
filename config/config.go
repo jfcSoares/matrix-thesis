@@ -86,7 +86,7 @@ type RawKeybindings struct {
 	Visual map[string]string `yaml:"visual,omitempty"`
 }
 
-// Config contains the main config of the client.
+// Config contains the main config of the client => the syncstore for the matrix client
 type Config struct {
 	UserID      id.UserID   `yaml:"mxid"`
 	DeviceID    id.DeviceID `yaml:"device_id"`

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
+	dbg "runtime/debug"
 	"strconv"
 	"time"
 
@@ -24,7 +26,7 @@ import (
 type ClientWrapper struct {
 	client *mautrix.Client //the matrix client which communicates with the homeserver
 
-	syncer *mautrix.DefaultSyncer //responsible for syncing data with server
+	syncer *ThesgoSyncer //responsible for syncing data with server
 
 	history *HistoryManager //responsible for storing event history
 
@@ -316,7 +318,7 @@ func (c *ClientWrapper) OnLogin() {
 
 	c.logger.Info().Msg("Initializing syncer")
 	//Instantiate syncer and assign event handlers to corresponding event types
-	c.syncer = mautrix.NewDefaultSyncer() //may try with default syncer for now, but probably will go with
+	c.syncer = NewThesgoSyncer(c.config.Rooms)
 	if c.crypto != nil {
 		c.syncer.OnSync(c.crypto.ProcessSyncResponse)
 		c.syncer.OnEventType(event.StateMember, func(source mautrix.EventSource, evt *event.Event) {
@@ -339,6 +341,7 @@ func (c *ClientWrapper) OnLogin() {
 	c.syncer.OnEventType(event.StateTopic, c.HandleMessage)
 	c.syncer.OnEventType(event.StateRoomName, c.HandleMessage)
 	c.syncer.OnEventType(event.StateMember, c.HandleMembership)
+	c.syncer.OnEventType(event.StateEncryption, c.HandleRoomEncryption)
 	/*c.syncer.OnEventType(event.EphemeralEventReceipt, c.HandleReadReceipt)
 	c.syncer.OnEventType(event.EphemeralEventTyping, c.HandleTyping)
 	c.syncer.OnEventType(event.AccountDataDirectChats, c.HandleDirectChatInfo)
@@ -346,7 +349,7 @@ func (c *ClientWrapper) OnLogin() {
 	c.syncer.OnEventType(event.AccountDataRoomTags, c.HandleTag)*/
 	//commented out the handlers for unnecessary features for now
 	//TODO: Add custom event handler for offline comms maybe?
-	/*c.syncer.InitDoneCallback = func() {
+	c.syncer.InitDoneCallback = func() { //once first sync is done
 		fmt.Print("Initial sync done")
 		c.config.AuthCache.InitialSyncDone = true
 		fmt.Print("Updating title caches")
@@ -357,7 +360,7 @@ func (c *ClientWrapper) OnLogin() {
 		c.config.Rooms.ForceClean()
 		fmt.Print("Saving all data")
 		c.config.SaveAll()
-		fmt.Print("Adding rooms to UI")
+		//fmt.Print("Adding rooms to UI")
 		//c.ui.MainView().SetRooms(c.config.Rooms)
 		//c.ui.Render()
 		// The initial sync can be a bit heavy, so we force run the GC here
@@ -365,7 +368,7 @@ func (c *ClientWrapper) OnLogin() {
 		fmt.Println("Running GC")
 		runtime.GC()
 		dbg.FreeOSMemory()
-	}*/
+	}
 	//possibly some interface code as well later?
 
 	c.client.Syncer = c.syncer
@@ -391,6 +394,21 @@ func (c *ClientWrapper) NewRoom(roomName string, topic string, inviteList []id.U
 	fmt.Println("Created room with ID: " + resp.RoomID)
 	room := c.GetOrCreateRoom(resp.RoomID)
 	c.logger.Info().Msg("Created room with ID:" + room.ID.String())
+
+	//Right after room creation, enable encryption for that room
+	evt := &mxevents.Event{
+		Event: &event.Event{
+			Type:   event.StateEncryption,
+			RoomID: room.ID,
+			Content: event.Content{Parsed: &event.EncryptionEventContent{
+				Algorithm:              id.AlgorithmMegolmV1,
+				RotationPeriodMillis:   604800000, //for now use default session rotation
+				RotationPeriodMessages: 100,
+			}},
+		},
+	}
+
+	c.SendStateEvent(evt)
 
 	return room, nil
 }
@@ -758,7 +776,12 @@ func (c *ClientWrapper) HandleMessage(source mautrix.EventSource, mxEvent *event
 	//Possivelmente fazer alguma coisa com o conteudo da mensagem (se for um alerta de intruso por exemplo)
 
 	//Açoes para o UI talvez
+}
 
+func (c *ClientWrapper) HandleRoomEncryption(source mautrix.EventSource, mxEvent *event.Event) {
+	roomID := mxEvent.RoomID
+	room := c.GetOrCreateRoom(roomID)
+	room.Encrypted = true
 }
 
 func (c *ClientWrapper) HandleEncrypted(source mautrix.EventSource, mxEvent *event.Event) {
