@@ -6,11 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	/*matrix "thesgo/matrix"
 	"thesgo/matrix/mxevents"
 
 	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/id"*/)
+	"maunium.net/go/mautrix/id")
 
 func main() {
 
@@ -33,12 +32,11 @@ func main() {
 		os.Exit(3)
 	}
 
-	fmt.Print("Config directory:", configDir)
-	fmt.Print("Data directory:", dataDir)
-	fmt.Print("Cache directory:", cacheDir)
+	fmt.Println("Config directory:", configDir)
+	fmt.Println("Data directory:", dataDir)
+	fmt.Println("Cache directory:", cacheDir)
 
 	thgo := NewThesgo(configDir, dataDir, cacheDir)
-	fmt.Println(thgo)
 
 	//Provavelmente falta codigo para lidar com flags
 
@@ -46,13 +44,29 @@ func main() {
 	c := thgo.Matrix()
 	c.Login("test1", "Test1!´´´")
 
-	/*c := matrix.NewWrapper()
-	c.InitClient(false)
-	//roomID, _ := c.NewRoom("Test Room", "For testing", nil)
-
 	rooms, _ := c.RoomsJoined()
 	c.JoinedMembers(rooms[0])
+	fmt.Println(event.StateEncryption)
 
+	stateKey := ""
+	evt := mxevents.Wrap(&event.Event{
+			Type:   event.StateEncryption,
+			RoomID: rooms[0],
+			StateKey: &stateKey,
+			Content: event.Content{Parsed: &event.EncryptionEventContent{
+				Algorithm:              id.AlgorithmMegolmV1,
+				RotationPeriodMillis:   604800000, //for now use default session rotation
+				RotationPeriodMessages: 100,
+			}},
+		
+	})
+
+
+	c.SendStateEvent(evt)
+
+	/*c := matrix.NewWrapper()
+	c.InitClient(false)
+	
 	/*content := &event.MessageEventContent{
 		MsgType: event.MsgText,
 		Body:    "Hello World!",
@@ -68,7 +82,7 @@ func main() {
 	})
 
 	c.SendEvent(evt)*/
-	c.Start()
+	//c.Start()
 
 	//<-c.IsStopped()
 	c.Logout()
@@ -76,7 +90,6 @@ func main() {
 
 func getRootDir(subdir string) string {
 	rootDir := os.Getenv("THESGO_ROOT")
-	fmt.Println(rootDir)
 	if rootDir == "" { //if env variable isnt set, return empty
 		return ""
 	}

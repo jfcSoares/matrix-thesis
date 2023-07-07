@@ -28,7 +28,7 @@ func NewThesgo(configDir, dataDir, cacheDir string) *Thesgo {
 
 	thgo.config = config.NewConfig(configDir, dataDir, cacheDir)
 	//thesgo.ui = uiProvider(thgo)
-	thgo.matrix = matrix.NewWrapper()
+	thgo.matrix = matrix.NewWrapper(thgo.config)
 
 	thgo.config.LoadAll()
 	//thgo.ui.Init()

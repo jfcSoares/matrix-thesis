@@ -52,10 +52,10 @@ var (
 )
 
 // NewWrapper creates a new ClientWrapper object for the given client instance.
-func NewWrapper() *ClientWrapper {
+func NewWrapper(conf *config.Config) *ClientWrapper {
 
 	c := &ClientWrapper{
-		//config: config.NewConfig() decide how to load directories into this
+		config: conf, //decide how to load directories into this
 		running: false,
 	}
 
@@ -82,15 +82,20 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 	}
 
 	//if client session was persisted
-	/*var mxid id.UserID
+	var mxid id.UserID
 	var accessToken string
 	if len(c.config.AccessToken) > 0 {
 		accessToken = c.config.AccessToken
 		mxid = c.config.UserID
-	}*/
+	}
 
 	var err error
-	c.client, err = mautrix.NewClient("https://lpgains.duckdns.org", "", "")
+	if mxid.String() != "" && len(accessToken) != 0{
+		c.client, err = mautrix.NewClient("https://lpgains.duckdns.org", mxid, accessToken)
+	} else {
+		c.client, err = mautrix.NewClient("https://lpgains.duckdns.org", "", "")
+	}
+
 	if err != nil {
 		c.logger.Error().Msg("failed to create mautrix client: " + err.Error())
 		return fmt.Errorf("failed to create mautrix client: %w", err)
@@ -117,7 +122,7 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 		}
 	}*/ //just in case, but probably will not be necessary
 
-	/*if !SkipVersionCheck && (!isStartup || len(c.client.AccessToken) > 0) {
+	if !SkipVersionCheck && (!isStartup || len(c.client.AccessToken) > 0) {
 		fmt.Printf("Checking versions that %s supports.", c.client.HomeserverURL)
 		resp, err := c.client.Versions()
 		if err != nil {
@@ -126,7 +131,7 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 		} else if !resp.ContainsGreaterOrEqual(MinSpecVersion) {
 			fmt.Print("Server doesn't support modern spec versions.")
 			bestVersionStr := "nothing"
-			bestVersion := gomatrix.MustParseSpecVersion("r0.0.0")
+			bestVersion := mautrix.MustParseSpecVersion("r0.0.0")
 			for _, ver := range resp.Versions {
 				if ver.GreaterThan(bestVersion) {
 					bestVersion = ver
@@ -137,13 +142,13 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 		} else {
 			fmt.Print("Server supports modern spec versions")
 		}
-	}*/ //for posterity, but will probably not be required, since we know the properties of the server a priori
+	} //for posterity, but will probably not be required, since we know the properties of the server a priori
 
 	c.stop = make(chan bool, 1)
 
-	/*if len(accessToken) > 0 {
+	if len(accessToken) > 0 {
 		go c.Start()
-	}*/
+	}
 
 	return nil
 }
@@ -230,11 +235,10 @@ func (c *ClientWrapper) concludeLogin(resp *mautrix.RespLogin) {
 	}
 
 	c.config.Save()
-	//go c.Start()
+	go c.Start()
 }
 
 func (c *ClientWrapper) Logout() {
-	fmt.Println("Logging out...")
 	c.logger.Info().Msg("Logging out...")
 	c.client.Logout()
 	c.Stop()
@@ -295,7 +299,7 @@ func (c *ClientWrapper) Stop() {
 		fmt.Print("Closing history manager...")
 		err := c.history.Close()
 		if err != nil {
-			fmt.Print("Error closing history manager:", err)
+			c.logger.Err(err).Msg("Error closing history manager")
 		}
 		c.history = nil
 
@@ -702,14 +706,16 @@ func (c *ClientWrapper) SendEvent(evt *mxevents.Event) (id.EventID, error) {
 // Sends a state event into a room
 func (c *ClientWrapper) SendStateEvent(evt *mxevents.Event) (id.EventID, error) {
 	//TODO: Encryption flow before sending the event
-
+	fmt.Println(evt.RoomID)
+	fmt.Println(evt.Type)
+	
 	resp, err := c.client.SendStateEvent(evt.RoomID, evt.Type, *evt.StateKey, &evt.Content)
 	if err != nil {
 		c.logger.Error().Err(err).Msg("could not send the specified event")
 		return "", err
 	}
 
-	c.logger.Info().Msg("Sent message with event ID: " + resp.EventID.String())
+	c.logger.Info().Msg("Sent state event with event ID: " + resp.EventID.String())
 	return resp.EventID, nil
 }
 
@@ -782,6 +788,7 @@ func (c *ClientWrapper) HandleRoomEncryption(source mautrix.EventSource, mxEvent
 	roomID := mxEvent.RoomID
 	room := c.GetOrCreateRoom(roomID)
 	room.Encrypted = true
+	c.logger.Info().Msg("Room with ID " + roomID.String() + " is now encrypted.")
 }
 
 func (c *ClientWrapper) HandleEncrypted(source mautrix.EventSource, mxEvent *event.Event) {
