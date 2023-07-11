@@ -5,13 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"runtime"
 	dbg "runtime/debug"
 	"strconv"
 	"time"
 
 	"thesgo/config"
+	"thesgo/debug"
 	"thesgo/matrix/mxevents"
 	"thesgo/matrix/rooms"
 
@@ -64,12 +64,7 @@ func NewWrapper(conf *config.Config) *ClientWrapper {
 }
 
 func (c *ClientWrapper) initLogger() zerolog.Logger {
-	log := zerolog.New(os.Stderr).With().Timestamp().Logger()
-	log = log.Level(zerolog.InfoLevel)
-
-	c.logger = log
-
-	return log
+	return *debug.Initialize()
 }
 
 // initializes the client and connects to the specified homeserver
@@ -100,6 +95,9 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 		c.logger.Error().Msg("failed to create mautrix client: " + err.Error())
 		return fmt.Errorf("failed to create mautrix client: %w", err)
 	}
+
+	c.client.Log = c.initLogger()
+	c.client.DeviceID = c.config.DeviceID
 
 	err = c.initCrypto()
 	if err != nil {
