@@ -11,10 +11,6 @@ import (
 	"runtime"
 
 	"thesgo/cmd"
-	"thesgo/matrix/mxevents"
-
-	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/id"
 )
 
 func main() {
@@ -47,7 +43,7 @@ func main() {
 	cmd.Execute()                //run the interface
 
 	thesgo.Start()
-	c := thesgo.Matrix()
+	/*c := thesgo.Matrix()
 	c.Login("test1", "Test1!´´´")
 
 	rooms, _ := c.RoomsJoined()
@@ -84,11 +80,11 @@ func main() {
 		Unsigned: event.Unsigned{TransactionID: c.Client().TxnID()},
 	})
 
-	c.SendEvent(evt)*/
+	c.SendEvent(evt)
 	//c.Start()
 
 	//<-c.IsStopped()
-	c.Logout()
+	c.Logout()*/
 }
 
 func getRootDir(subdir string) string {
