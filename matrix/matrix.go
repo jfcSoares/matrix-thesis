@@ -55,7 +55,7 @@ var (
 func NewWrapper(conf *config.Config) *ClientWrapper {
 
 	c := &ClientWrapper{
-		config: conf, //decide how to load directories into this
+		config:  conf, //decide how to load directories into this
 		running: false,
 	}
 
@@ -90,7 +90,7 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 	}
 
 	var err error
-	if mxid.String() != "" && len(accessToken) != 0{
+	if mxid.String() != "" && len(accessToken) != 0 {
 		c.client, err = mautrix.NewClient("https://lpgains.duckdns.org", mxid, accessToken)
 	} else {
 		c.client, err = mautrix.NewClient("https://lpgains.duckdns.org", "", "")
@@ -280,7 +280,7 @@ func (c *ClientWrapper) Start() {
 			} else {
 				fmt.Print("Sync() returned without error")
 				c.logger.Info().Msg("Sync() call returned successfully")
-				c.Logout() //ONLY FOR TESTING
+				//c.Logout() //ONLY FOR TESTING
 			}
 		}
 	}
@@ -501,9 +501,9 @@ func (c *ClientWrapper) RoomsJoined() ([]id.RoomID, error) {
 }
 
 // Joins a room with the given room or alias, through the specified server in the arguments
-func (c *ClientWrapper) JoinRoom(roomIdOrAlias, server string, content interface{}) (*rooms.Room, error) {
+func (c *ClientWrapper) JoinRoom(roomID id.RoomID, server string) (*rooms.Room, error) {
 	//maybe add a check to see if content is nil
-	resp, err := c.client.JoinRoom(roomIdOrAlias, server, content)
+	resp, err := c.client.JoinRoom(roomID.String(), server, nil)
 
 	if err != nil {
 		fmt.Println(err)
@@ -513,8 +513,8 @@ func (c *ClientWrapper) JoinRoom(roomIdOrAlias, server string, content interface
 
 	room := c.GetOrCreateRoom(resp.RoomID)
 	room.HasLeft = false
-	fmt.Println("Successfully joined room with id: " + roomIdOrAlias)
-	c.logger.Info().Msg("Successfully joined room with ID: " + roomIdOrAlias)
+	fmt.Println("Successfully joined room with id: " + roomID)
+	c.logger.Info().Msg("Successfully joined room with ID: " + roomID.String())
 
 	return room, nil
 }
@@ -708,7 +708,7 @@ func (c *ClientWrapper) SendStateEvent(evt *mxevents.Event) (id.EventID, error) 
 	//TODO: Encryption flow before sending the event
 	fmt.Println(evt.RoomID)
 	fmt.Println(evt.Type)
-	
+
 	resp, err := c.client.SendStateEvent(evt.RoomID, evt.Type, *evt.StateKey, &evt.Content)
 	if err != nil {
 		c.logger.Error().Err(err).Msg("could not send the specified event")

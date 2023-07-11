@@ -1,3 +1,6 @@
+/*
+Copyright © 2023 NAME HERE <EMAIL ADDRESS>
+*/
 package main
 
 import (
@@ -6,10 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"thesgo/cmd"
 	"thesgo/matrix/mxevents"
 
 	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/id")
+	"maunium.net/go/mautrix/id"
+)
 
 func main() {
 
@@ -36,37 +42,34 @@ func main() {
 	fmt.Println("Data directory:", dataDir)
 	fmt.Println("Cache directory:", cacheDir)
 
-	thgo := NewThesgo(configDir, dataDir, cacheDir)
+	thesgo := NewThesgo(configDir, dataDir, cacheDir)
+	cmd.SetLinkToBackend(thesgo) //link interface to rest of the client code
+	cmd.Execute()                //run the interface
 
-	//Provavelmente falta codigo para lidar com flags
-
-	thgo.Start()
-	c := thgo.Matrix()
+	thesgo.Start()
+	c := thesgo.Matrix()
 	c.Login("test1", "Test1!´´´")
 
 	rooms, _ := c.RoomsJoined()
-	c.JoinedMembers(rooms[0])
 	fmt.Println(event.StateEncryption)
 
 	stateKey := ""
 	evt := mxevents.Wrap(&event.Event{
-			Type:   event.StateEncryption,
-			RoomID: rooms[0],
-			StateKey: &stateKey,
-			Content: event.Content{Parsed: &event.EncryptionEventContent{
-				Algorithm:              id.AlgorithmMegolmV1,
-				RotationPeriodMillis:   604800000, //for now use default session rotation
-				RotationPeriodMessages: 100,
-			}},
-		
+		Type:     event.StateEncryption,
+		RoomID:   rooms[0],
+		StateKey: &stateKey,
+		Content: event.Content{Parsed: &event.EncryptionEventContent{
+			Algorithm:              id.AlgorithmMegolmV1,
+			RotationPeriodMillis:   604800000, //for now use default session rotation
+			RotationPeriodMessages: 100,
+		}},
 	})
-
 
 	c.SendStateEvent(evt)
 
 	/*c := matrix.NewWrapper()
 	c.InitClient(false)
-	
+
 	/*content := &event.MessageEventContent{
 		MsgType: event.MsgText,
 		Body:    "Hello World!",

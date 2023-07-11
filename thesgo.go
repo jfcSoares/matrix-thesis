@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
 	"thesgo/config"
+	ifc "thesgo/interfaces"
 	"thesgo/matrix"
 	"time"
 )
@@ -61,7 +63,7 @@ func (thgo *Thesgo) StartAutosave() {
 	}
 }
 
-// Stop stops the Matrix syncer, the tview app and the autosave goroutine,
+// Stop stops the Matrix syncer and the autosave goroutine,
 // then saves everything and calls os.Exit(0).
 func (thgo *Thesgo) Stop(save bool) {
 	go thgo.internalStop(save)
@@ -117,7 +119,7 @@ func (thgo *Thesgo) Start() {
 }
 
 // Matrix returns the MatrixContainer instance.
-func (thgo *Thesgo) Matrix() *matrix.ClientWrapper {
+func (thgo *Thesgo) Matrix() ifc.MatrixContainer {
 	return thgo.matrix
 }
 
