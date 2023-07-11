@@ -492,7 +492,7 @@ func (c *ClientWrapper) RoomsJoined() ([]id.RoomID, error) {
 		return nil, err
 	} else {
 		for i := 0; i < len(resp.JoinedRooms); i++ {
-			fmt.Println(resp.JoinedRooms[i])
+			fmt.Print(resp.JoinedRooms[i] + ", ")
 			//first indexes are the most recent rooms
 		}
 	}
