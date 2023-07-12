@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"thesgo/cmd"
 	"thesgo/debug"
@@ -45,10 +46,10 @@ func main() {
 	fmt.Println("Cache directory:", cacheDir)
 
 	thesgo := NewThesgo(configDir, dataDir, cacheDir)
-	cmd.SetLinkToBackend(thesgo) //link interface to rest of the client code
+	thesgo.Start()
+	cmd.SetLinkToBackend(thesgo) //link cli to rest of the client code
 	cmd.Execute()                //run the interface
 
-	thesgo.Start()
 	/*c := thesgo.Matrix()
 	c.Login("test1", "Test1!´´´")
 
@@ -91,6 +92,11 @@ func main() {
 
 	//<-c.IsStopped()
 	c.Logout()*/
+
+	// We use os.Exit() everywhere, so exiting by returning from Start() shouldn't happen.
+	time.Sleep(5 * time.Second)
+	fmt.Println("Unexpected exit by return from gmx.Start().")
+	os.Exit(2)
 }
 
 func getRootDir(subdir string) string {
