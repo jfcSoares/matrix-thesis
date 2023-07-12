@@ -95,7 +95,7 @@ func main() {
 
 	// We use os.Exit() everywhere, so exiting by returning from Start() shouldn't happen.
 	time.Sleep(5 * time.Second)
-	fmt.Println("Unexpected exit by return from gmx.Start().")
+	fmt.Println("Unexpected exit by return from thesgo.Start().")
 	os.Exit(2)
 }
 

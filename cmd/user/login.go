@@ -29,7 +29,7 @@ func init() {
 	loginCmd.Flags().StringVarP(&userID, "username", "u", "", "Account username to login")
 	loginCmd.Flags().StringVarP(&password, "password", "p", "", "Account password to login")
 
-	if err := loginCmd.MarkFlagRequired("url"); err != nil {
+	if err := loginCmd.MarkFlagRequired("username"); err != nil {
 		fmt.Println(err)
 	}
 
