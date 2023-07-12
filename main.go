@@ -47,7 +47,9 @@ func main() {
 	thesgo := NewThesgo(configDir, dataDir, cacheDir)
 	thesgo.Start()
 	cmd.SetLinkToBackend(thesgo) //link cli to rest of the client code
-	cmd.Execute()                //run the interface
+	for {
+		cmd.Execute() //run the interface
+	}
 
 	/*c := thesgo.Matrix()
 	c.Login("test1", "Test1!´´´")
