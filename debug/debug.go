@@ -53,6 +53,7 @@ func Initialize() *zerolog.Logger {
 
 	//defer file.Close() //TODO: this closes file right after initializing the logger, which defeats the purpose
 	//Change this flow in order to keep file open at all times (possibly only opening in main.main())
+	//Maybe make this object global and import it everywhere, for an uncluttered std.Out()
 
 	logger := zerolog.New(zerolog.ConsoleWriter{
 		Out:        file,

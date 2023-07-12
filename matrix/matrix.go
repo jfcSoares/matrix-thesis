@@ -121,13 +121,13 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 	}*/ //just in case, but probably will not be necessary
 
 	if !SkipVersionCheck && (!isStartup || len(c.client.AccessToken) > 0) {
-		fmt.Printf("Checking versions that %s supports.", c.client.HomeserverURL)
+		c.logger.Info().Msg("Checking versions that " + c.client.HomeserverURL.String() + " supports.")
 		resp, err := c.client.Versions()
 		if err != nil {
-			fmt.Print("Error checking supported versions:", err)
+			c.logger.Err(err).Msg("Error checking supported versions")
 			return fmt.Errorf("failed to check server versions: %w", err)
 		} else if !resp.ContainsGreaterOrEqual(MinSpecVersion) {
-			fmt.Print("Server doesn't support modern spec versions.")
+			c.logger.Info().Msg("Server doesn't support modern spec versions.")
 			bestVersionStr := "nothing"
 			bestVersion := mautrix.MustParseSpecVersion("r0.0.0")
 			for _, ver := range resp.Versions {
@@ -138,7 +138,7 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 			}
 			return fmt.Errorf("%w (it only supports %s, while this client requires %s)", ErrServerOutdated, bestVersionStr, MinSpecVersion.String())
 		} else {
-			fmt.Print("Server supports modern spec versions")
+			c.logger.Info().Msg("Server supports modern spec versions")
 		}
 	} //for posterity, but will probably not be required, since we know the properties of the server a priori
 
@@ -221,8 +221,6 @@ func (c *ClientWrapper) PasswordLogin(user, password string) error {
 
 // Concludes the login process, by assigning some last values to config fields
 func (c *ClientWrapper) concludeLogin(resp *mautrix.RespLogin) {
-	fmt.Println(resp.UserID + " = " + c.client.UserID)
-	fmt.Println(resp.AccessToken + " = " + c.client.AccessToken)
 
 	//Persist client credentials
 	c.config.UserID = resp.UserID
@@ -254,25 +252,21 @@ func (c *ClientWrapper) Start() {
 		return
 	}
 
-	fmt.Print("Starting sync...")
 	c.logger.Info().Msg("Starting sync...")
 	c.running = true
 	c.client.StreamSyncMinAge = 30 * time.Minute
 	for {
 		select {
 		case <-c.stop:
-			fmt.Print("Stopping sync...")
 			c.logger.Info().Msg("Stopping sync...")
 			c.running = false
 			return
 		default:
 			if err := c.client.Sync(); err != nil {
 				if errors.Is(err, mautrix.MUnknownToken) {
-					fmt.Print("Sync() errored with ", err, " -> logging out")
 					c.logger.Error().Msg("Access token was not recognized -> logging out")
 					c.Logout()
 				} else {
-					fmt.Print("Sync() errored", err)
 					c.logger.Error().Msg("Sync() call errored with: " + err.Error())
 				}
 			} else {
@@ -352,22 +346,22 @@ func (c *ClientWrapper) OnLogin() {
 	//commented out the handlers for unnecessary features for now
 	//TODO: Add custom event handler for offline comms maybe?
 	c.syncer.InitDoneCallback = func() { //once first sync is done
-		fmt.Print("Initial sync done")
+		c.logger.Info().Msg("Initial sync done")
 		c.config.AuthCache.InitialSyncDone = true
-		fmt.Print("Updating title caches")
+		c.logger.Info().Msg("Updating title caches")
 		for _, room := range c.config.Rooms.Map {
 			room.GetTitle()
 		}
-		fmt.Print("Cleaning cached rooms from memory")
+		c.logger.Info().Msg("Cleaning cached rooms from memory")
 		c.config.Rooms.ForceClean()
-		fmt.Print("Saving all data")
+		c.logger.Info().Msg("Saving all data")
 		c.config.SaveAll()
 		//fmt.Print("Adding rooms to UI")
 		//c.ui.MainView().SetRooms(c.config.Rooms)
 		//c.ui.Render()
 		// The initial sync can be a bit heavy, so we force run the GC here
 		// after cleaning up rooms from memory above.
-		fmt.Println("Running GC")
+		c.logger.Info().Msg("Running GC")
 		runtime.GC()
 		dbg.FreeOSMemory()
 	}
@@ -418,16 +412,16 @@ func (c *ClientWrapper) NewRoom(roomName string, topic string, inviteList []id.U
 // Stops a user from participating in a given room, but it may still be able to retrieve its history
 // if it rejoins the same room
 func (c *ClientWrapper) ExitRoom(roomID id.RoomID, reason string) error {
-	var resp *mautrix.RespLeaveRoom
+
 	var err error
 
 	if reason != "" {
-		resp, err = c.client.LeaveRoom(roomID, &mautrix.ReqLeave{
+		_, err = c.client.LeaveRoom(roomID, &mautrix.ReqLeave{
 			Reason: reason,
 		})
 
 	} else {
-		resp, err = c.client.LeaveRoom(roomID)
+		_, err = c.client.LeaveRoom(roomID)
 	}
 
 	if err != nil {
@@ -438,7 +432,6 @@ func (c *ClientWrapper) ExitRoom(roomID id.RoomID, reason string) error {
 	node := c.GetOrCreateRoom(roomID)
 	node.HasLeft = true
 	node.Unload()
-	fmt.Println(resp)
 	fmt.Println("Left room with ID: " + roomID)
 	c.logger.Info().Msg("Left room with ID: " + roomID.String())
 
@@ -448,14 +441,13 @@ func (c *ClientWrapper) ExitRoom(roomID id.RoomID, reason string) error {
 // After this function is called, a user will no longer be able to retrieve history for the given room.
 // If all users on a homeserver forget a room, the room is eligible for deletion from that homeserver.
 func (c *ClientWrapper) ForgetRoom(roomID id.RoomID) error {
-	resp, err := c.client.ForgetRoom(roomID)
+	_, err := c.client.ForgetRoom(roomID)
 
 	if err != nil {
 		c.logger.Error().Err(err).Msg("could not forget room")
 		return err
 	}
 
-	fmt.Println(resp)
 	fmt.Println("Forgot room with ID: " + roomID)
 	c.logger.Info().Msg("Forgot room with ID: " + roomID.String())
 	return nil
@@ -536,16 +528,16 @@ func (c *ClientWrapper) JoinedMembers(roomID id.RoomID) error {
 
 func (c *ClientWrapper) FetchMembers(room *rooms.Room) error {
 	fmt.Print("Fetching member list for", room.ID)
+	c.logger.Info().Msg("Fetching member list for room" + room.ID.String())
 	members, err := c.client.Members(room.ID, mautrix.ReqMembers{At: room.LastPrevBatch})
 	if err != nil {
 		c.logger.Err(err).Msg("Could not fetch members of room " + room.ID.String())
 		return err
 	}
-	fmt.Printf("Fetched %d members for %s", len(members.Chunk), room.ID)
+	c.logger.Info().Msg("Fetched " + strconv.Itoa(len(members.Chunk)) + "members for " + room.ID.String())
 	for _, evt := range members.Chunk {
 		err := evt.Content.ParseRaw(evt.Type)
 		if err != nil {
-			fmt.Printf("Failed to parse member event of %s: %v", evt.GetStateKey(), err)
 			c.logger.Err(err).Msg("Failed to parse member event of " + evt.GetStateKey())
 			continue
 		}
@@ -646,7 +638,7 @@ func (c *ClientWrapper) GetEvent(room *rooms.Room, eventID id.EventID) (*mxevent
 		c.logger.Err(err).Msg("Failed to unmarshal content of event " + evt.ID.String() + " (type " + evt.Type.Repr() + ") by " + string(evt.Sender) + " in " + string(evt.RoomID) + " with content:" + string(evt.Content.VeryRaw))
 		return nil, err
 	}
-	fmt.Printf("Loaded event %s from server", eventID)
+
 	c.logger.Info().Msg("Loaded event " + eventID.String() + " from server")
 	return mxevents.Wrap(mxEvent), nil
 }
