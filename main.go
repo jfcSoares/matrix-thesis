@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"time"
 
 	"thesgo/cmd"
 	"thesgo/debug"
@@ -94,9 +93,9 @@ func main() {
 	c.Logout()*/
 
 	// We use os.Exit() everywhere, so exiting by returning from Start() shouldn't happen.
-	time.Sleep(5 * time.Second)
+	/*time.Sleep(5 * time.Second)
 	fmt.Println("Unexpected exit by return from thesgo.Start().")
-	os.Exit(2)
+	os.Exit(2)*/
 }
 
 func getRootDir(subdir string) string {
@@ -143,13 +142,13 @@ func UserDataDir() (dir string, err error) {
 }
 
 func UserConfigDir() (dir string, err error) {
-	dir = os.Getenv("GOMUKS_CONFIG_HOME")
+	dir = os.Getenv("THESGO_CONFIG_HOME")
 	if dir == "" {
 		dir = getRootDir("config")
 	}
 	if dir == "" {
 		dir, err = os.UserConfigDir()
-		dir = filepath.Join(dir, "gomuks")
+		dir = filepath.Join(dir, "thesgo")
 	}
 	return
 }
