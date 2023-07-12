@@ -51,7 +51,7 @@ func Initialize() *zerolog.Logger {
 		panic(err)
 	}
 
-	defer file.Close() //TODO: this closes file right after initializing the logger, which defeats the purpose
+	//defer file.Close() //TODO: this closes file right after initializing the logger, which defeats the purpose
 	//Change this flow in order to keep file open at all times (possibly only opening in main.main())
 
 	logger := zerolog.New(zerolog.ConsoleWriter{

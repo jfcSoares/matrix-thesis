@@ -11,9 +11,15 @@ import (
 	"runtime"
 
 	"thesgo/cmd"
+	"thesgo/debug"
 )
 
 func main() {
+
+	debugDir := os.Getenv("DEBUG_DIR")
+	if len(debugDir) > 0 {
+		debug.LogDirectory = debugDir
+	}
 
 	var configDir, dataDir, cacheDir string
 	var err error
