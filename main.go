@@ -45,10 +45,10 @@ func main() {
 	fmt.Println("Cache directory:", cacheDir)
 
 	thesgo := NewThesgo(configDir, dataDir, cacheDir)
-	thesgo.Start()
 	cmd.SetLinkToBackend(thesgo) //link cli to rest of the client code
 	cmd.Execute()                //run the interface
 
+	thesgo.Start()
 	/*c := thesgo.Matrix()
 	c.Login("test1", "Test1!´´´")
 
