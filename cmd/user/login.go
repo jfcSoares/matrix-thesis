@@ -14,8 +14,8 @@ var userID, password string //variables to hold flag values
 // loginCmd represents the login command
 var loginCmd = &cobra.Command{
 	Use:     "login",
-	Short:   "Logs a user into his Matrix account",
-	Long:    `Logs a user into his Matrix account, persisting his account and session information to a given file`,
+	Short:   "Logs a user into his Matrix account.",
+	Long:    `Logs a user into his Matrix account, persisting his account and session information to a given file.`,
 	Example: "thesgo user login -u 'id' -p 'password'",
 	Run: func(comd *cobra.Command, args []string) {
 		Backend.Matrix().Login(userID, password)
