@@ -51,6 +51,6 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	UserCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	UserCmd.Flags().BoolVarP(&cleancache, "clear-cache", "cc", false, "Instructs the client to clear the cache contents")
-	UserCmd.Flags().BoolVarP(&cleandata, "clear-data", "cd", false, "Instructs the client to clear all data previously stored")
+	UserCmd.Flags().BoolVarP(&cleancache, "clear-cache", "c", false, "Instructs the client to clear the cache contents")
+	UserCmd.Flags().BoolVarP(&cleandata, "clear-data", "d", false, "Instructs the client to clear all data previously stored")
 }
