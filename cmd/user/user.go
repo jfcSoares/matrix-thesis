@@ -4,12 +4,15 @@ Copyright © 2023 João Soares <jfc.soares@campus.fct.unl.pt>
 package user
 
 import (
+	"fmt"
+	"os"
 	ifc "thesgo/interfaces"
 
 	"github.com/spf13/cobra"
 )
 
 var Backend ifc.Thesgo //variable to handle client operations
+var cleancache, cleandata bool
 
 // userCmd represents the user command
 var UserCmd = &cobra.Command{
@@ -18,6 +21,17 @@ var UserCmd = &cobra.Command{
 	Long:  `Command group for user-related commands, such as login, logout or account-info`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
+		if cleancache {
+			Backend.Config().Clear()
+			fmt.Printf("Cleared cache at %s\n", Backend.Config().CacheDir)
+		}
+
+		if cleandata {
+			Backend.Config().Clear()
+			Backend.Config().ClearData()
+			_ = os.RemoveAll(Backend.Config().Dir)
+			fmt.Printf("Cleared cache at %s, data at %s and config at %s\n", Backend.Config().CacheDir, Backend.Config().DataDir, Backend.Config().Dir)
+		}
 	},
 }
 
@@ -32,9 +46,11 @@ func init() {
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// userCmd.PersistentFlags().String("foo", "", "A help for foo")
+	//userCmd.PersistentFlags().String("foo", "", "A help for foo")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	// userCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	UserCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	UserCmd.Flags().BoolVarP(&cleancache, "clear-cache", "cc", false, "Instructs the client to clear the cache contents")
+	UserCmd.Flags().BoolVarP(&cleandata, "clear-data", "cd", false, "Instructs the client to clear all data previously stored")
 }
