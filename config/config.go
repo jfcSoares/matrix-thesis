@@ -6,7 +6,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -299,7 +298,7 @@ func (config *Config) load(name, dir, file string, target interface{}) error {
 	}
 
 	path := filepath.Join(dir, file)
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -313,6 +312,7 @@ func (config *Config) load(name, dir, file string, target interface{}) error {
 	} else {
 		err = json.Unmarshal(data, target)
 	}
+
 	if err != nil {
 		debug.Print("Failed to parse", name, "at", path)
 		return err
@@ -330,19 +330,21 @@ func (config *Config) save(name, dir, file string, source interface{}) {
 		debug.Print("Failed to create", dir)
 		panic(err)
 	}
+
 	var data []byte
 	if strings.HasSuffix(file, ".yaml") {
 		data, err = yaml.Marshal(source)
 	} else {
 		data, err = json.Marshal(source)
 	}
+
 	if err != nil {
 		debug.Print("Failed to marshal", name)
 		panic(err)
 	}
 
 	path := filepath.Join(dir, file)
-	err = ioutil.WriteFile(path, data, 0600)
+	err = os.WriteFile(path, data, 0600)
 	if err != nil {
 		debug.Print("Failed to write", name, "to", path)
 		panic(err)

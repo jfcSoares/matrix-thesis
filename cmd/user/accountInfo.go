@@ -16,16 +16,15 @@ var accountInfoCmd = &cobra.Command{
 	Long: `Returns relevant information about the account that is currently logged
 	in, including username, homeserver, device ID, and joined rooms.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		userID := Backend.Config().GetUserID().String()
+		userID := Backend.Config().GetUserID().Localpart()
 		deviceID := Backend.Config().DeviceID.String()
+		accToken := Backend.Config().AccessToken
 
 		fmt.Println("Account username: " + userID)
 		fmt.Println("Account server: https://lpgains.duckdns.org")
 		fmt.Println("Device ID: " + deviceID)
-		var a []string
-		for _, room := range Backend.Config().Rooms.Map {
-			a = append(a, room.GetTitle())
-		}
+		fmt.Println("Access Token: " + accToken)
+		var a, _ = Backend.Matrix().RoomsJoined()
 		fmt.Println(a)
 	},
 }

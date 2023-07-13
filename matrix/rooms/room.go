@@ -444,14 +444,14 @@ func (room *Room) GetStateEvent(eventType event.Type, stateKey string) *event.Ev
 	room.Load()
 	room.lock.RLock()
 	defer room.lock.RUnlock()
-	stateEventMap, _ := room.state[eventType]
-	evt, _ := stateEventMap[stateKey]
+	stateEventMap := room.state[eventType]
+	evt := stateEventMap[stateKey]
 	return evt
 }
 
 // getStateEvents returns the state events for the given type.
 func (room *Room) getStateEvents(eventType event.Type) map[string]*event.Event {
-	stateEventMap, _ := room.state[eventType]
+	stateEventMap := room.state[eventType]
 	return stateEventMap
 }
 
@@ -599,26 +599,26 @@ func (room *Room) createMemberCache() map[id.UserID]*Member {
 	memberEvents := room.getStateEvents(event.StateMember)
 	room.firstMemberCache = nil
 	room.secondMemberCache = nil
-	if memberEvents != nil {
-		for userIDStr, evt := range memberEvents {
-			userID := id.UserID(userIDStr)
-			member := room.eventToMember(userID, evt.Sender, evt.Content.AsMember())
-			if member.Membership.IsInviteOrJoin() {
-				cache[userID] = member
-				room.updateNthMemberCache(userID, member)
-			} else {
-				exCache[userID] = member
-			}
-			if userID == room.SessionUserID {
-				room.SessionMember = member
-			}
+
+	for userIDStr, evt := range memberEvents {
+		userID := id.UserID(userIDStr)
+		member := room.eventToMember(userID, evt.Sender, evt.Content.AsMember())
+		if member.Membership.IsInviteOrJoin() {
+			cache[userID] = member
+			room.updateNthMemberCache(userID, member)
+		} else {
+			exCache[userID] = member
+		}
+		if userID == room.SessionUserID {
+			room.SessionMember = member
 		}
 	}
+
 	if len(room.Summary.Heroes) > 1 {
-		room.firstMemberCache, _ = cache[room.Summary.Heroes[0]]
+		room.firstMemberCache = cache[room.Summary.Heroes[0]]
 	}
 	if len(room.Summary.Heroes) > 2 {
-		room.secondMemberCache, _ = cache[room.Summary.Heroes[1]]
+		room.secondMemberCache = cache[room.Summary.Heroes[1]]
 	}
 	room.lock.RUnlock()
 	room.lock.Lock()

@@ -212,6 +212,8 @@ func (cache *RoomCache) touch(node *Room) {
 	node.touch = time.Now().Unix()
 }
 
+// Attempts to obtain a given room from the local cache, calling the auxiliary method get
+// and covering against data races
 func (cache *RoomCache) Get(roomID id.RoomID) *Room {
 	cache.Lock()
 	node := cache.get(roomID)
@@ -219,6 +221,7 @@ func (cache *RoomCache) Get(roomID id.RoomID) *Room {
 	return node
 }
 
+// Checks if a room with the given id already exists, if not, create it and save it to memory
 func (cache *RoomCache) GetOrCreate(roomID id.RoomID) *Room {
 	cache.Lock()
 	node := cache.get(roomID)
@@ -230,7 +233,7 @@ func (cache *RoomCache) GetOrCreate(roomID id.RoomID) *Room {
 	return node
 }
 
-// Attempts to obtain a given room from the local cache
+// Attempts to obtain a given room from memory
 func (cache *RoomCache) get(roomID id.RoomID) *Room {
 	node, ok := cache.Map[roomID]
 	if ok && node != nil {

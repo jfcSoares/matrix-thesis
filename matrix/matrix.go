@@ -83,7 +83,7 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 		accessToken = c.config.AccessToken
 		mxid = c.config.UserID
 	}
-	fmt.Print(mxid.String() + ", " + accessToken)
+	fmt.Println(mxid.String() + ", " + accessToken)
 
 	var err error
 	if mxid.String() != "" && len(accessToken) > 0 {
@@ -482,9 +482,11 @@ func (c *ClientWrapper) RoomsJoined() ([]id.RoomID, error) {
 		c.logger.Error().Err(err).Msg("could not list the rooms the user is joined to")
 		return nil, err
 	} else {
-		for i := 0; i < len(resp.JoinedRooms); i++ {
+		for i := 0; i < len(resp.JoinedRooms); i++ { //first indexes are the most recent rooms
 			fmt.Print(resp.JoinedRooms[i] + ", ")
-			//first indexes are the most recent rooms
+			//if there aren't any rooms in memory, creates them
+			c.config.Rooms.GetOrCreate(resp.JoinedRooms[i])
+
 		}
 	}
 
