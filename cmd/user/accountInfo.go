@@ -17,11 +17,10 @@ var accountInfoCmd = &cobra.Command{
 	in, including username, homeserver, device ID, and joined rooms.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		userID := Backend.Config().GetUserID().String()
-		hs := Backend.Config().Homeserver
 		deviceID := Backend.Config().DeviceID.String()
 
 		fmt.Println("Account username: " + userID)
-		fmt.Println("Account server: " + hs)
+		fmt.Println("Account server: https://lpgains.duckdns.org")
 		fmt.Println("Device ID: " + deviceID)
 		var a []string
 		for _, room := range Backend.Config().Rooms.Map {

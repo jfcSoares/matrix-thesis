@@ -83,9 +83,10 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 		accessToken = c.config.AccessToken
 		mxid = c.config.UserID
 	}
+	fmt.Print(mxid.String() + ", " + accessToken)
 
 	var err error
-	if mxid.String() != "" && len(accessToken) != 0 {
+	if mxid.String() != "" && len(accessToken) > 0 {
 		c.client, err = mautrix.NewClient("https://lpgains.duckdns.org", mxid, accessToken)
 	} else {
 		c.client, err = mautrix.NewClient("https://lpgains.duckdns.org", "", "")
