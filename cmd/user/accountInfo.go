@@ -21,7 +21,7 @@ var accountInfoCmd = &cobra.Command{
 		accToken := Backend.Config().AccessToken
 
 		fmt.Println("Account username: " + userID)
-		fmt.Println("Account server: https://lpgains.duckdns.org")
+		fmt.Println("Account server: " + Server)
 		fmt.Println("Device ID: " + deviceID)
 		fmt.Println("Access Token: " + accToken)
 		var a, _ = Backend.Matrix().RoomsJoined()

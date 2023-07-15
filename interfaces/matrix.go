@@ -28,10 +28,12 @@ type MatrixContainer interface {
 	JoinRoom(roomID id.RoomID, server string) (*rooms.Room, error)
 	ExitRoom(roomID id.RoomID, reason string) error
 	NewRoom(roomName string, topic string, inviteList []id.UserID) (*rooms.Room, error)
+	ForgetRoom(roomID id.RoomID) error
 	RoomsJoined() ([]id.RoomID, error)
 	InviteUser(roomID id.RoomID, reason, user string) error
 
 	FetchMembers(room *rooms.Room) error
+	JoinedMembers(roomID id.RoomID) error //not sure if this is better than fetchMembers
 	GetHistory(room *rooms.Room, limit int, dbPointer uint64) ([]*mxevents.Event, uint64, error)
 	GetEvent(room *rooms.Room, eventID id.EventID) (*mxevents.Event, error)
 	GetRoom(roomID id.RoomID) *rooms.Room

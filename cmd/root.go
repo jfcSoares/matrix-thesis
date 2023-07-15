@@ -6,6 +6,7 @@ package cmd
 import (
 	"os"
 
+	"thesgo/cmd/rooms"
 	"thesgo/cmd/user"
 	ifc "thesgo/interfaces"
 
@@ -35,11 +36,13 @@ func Execute() {
 
 func addSubcommandGroups() {
 	rootCmd.AddCommand(user.UserCmd) //adds the user commands as a whole subgroup
+	rootCmd.AddCommand(rooms.RoomCmd)
 }
 
 // Set a variable pointing to the main client object (ifc.Thesgo)
 func SetLinkToBackend(thesgo ifc.Thesgo) {
 	user.SetLinkToBackend(thesgo)
+	rooms.SetLinkToBackend(thesgo)
 }
 
 func init() {

@@ -518,7 +518,7 @@ func (c *ClientWrapper) JoinedMembers(roomID id.RoomID) error {
 
 	if err != nil {
 		fmt.Println(err)
-		c.logger.Error().Err(err).Msg("could not list the members of the given room")
+		c.logger.Error().Err(err).Msg("could not get the list of members of the given room")
 		return err
 	} else {
 		for key := range resp.Joined { //print out the room members' display names

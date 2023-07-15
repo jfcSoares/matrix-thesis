@@ -14,6 +14,8 @@ import (
 var Backend ifc.Thesgo //variable to handle client operations
 var cleancache, cleandata bool
 
+const Server string = "https:/lpgains.duckdns.org"
+
 // userCmd represents the user command
 var UserCmd = &cobra.Command{
 	Use:   "user",
