@@ -44,7 +44,7 @@ func init() {
 	// is called directly, e.g.:
 	// roomCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	RoomCmd.PersistentFlags().StringVarP(&RoomName, "room-name", "n", "", "Name of the room")
-	if err := RoomCmd.MarkFlagRequired("room-name"); err != nil {
+	if err := RoomCmd.MarkPersistentFlagRequired("room-name"); err != nil {
 		fmt.Println("huh")
 		fmt.Println(err)
 	}
