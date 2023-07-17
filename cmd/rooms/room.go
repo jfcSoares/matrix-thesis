@@ -43,8 +43,8 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// roomCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	RoomCmd.PersistentFlags().StringVarP(&RoomName, "room", "n", "", "Name of the room")
-	if err := newRoomCmd.MarkFlagRequired("room"); err != nil {
+	RoomCmd.PersistentFlags().StringVarP(&RoomName, "room-name", "n", "", "Name of the room")
+	if err := RoomCmd.MarkFlagRequired("room-name"); err != nil {
 		fmt.Println("huh")
 		fmt.Println(err)
 	}
