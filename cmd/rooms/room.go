@@ -19,8 +19,8 @@ const Server string = "https:/lpgains.duckdns.org" //const to avoid hardcoding s
 var RoomCmd = &cobra.Command{
 	Use:   "room",
 	Short: "Commands for every expected action regarding rooms.",
-	Long: `Commands for a user that is logged in to interact with his rooms, like inviting other users, 
-	creating a new room, leaving a room, and sending messages into a room.(Encryption is enabled by default)`,
+	Long: `Commands for a user that is logged in to interact with his rooms, like inviting other users,
+creating a new room, leaving a room, and sending messages into a room (with encryption enabled by default).`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("room called")
 	},
