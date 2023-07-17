@@ -5,8 +5,11 @@ package rooms
 
 import (
 	"fmt"
+	"thesgo/matrix/mxevents"
 
 	"github.com/spf13/cobra"
+	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 )
 
 var message string
@@ -18,8 +21,29 @@ var messageCmd = &cobra.Command{
 	Long: `Sends a message to the specified room, encrypted by default. 
 	To see every message sent by every user in a room, use command "history".`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("message called")
+		evt := prepareEvent()
+		Backend.Matrix().SendEvent(evt)
 	},
+}
+
+// Builds the event to send to the server for processing
+func prepareEvent() *mxevents.Event {
+	content := &event.MessageEventContent{
+		MsgType: event.MsgText,
+		Body:    message,
+	}
+
+	//Maybe use user credentials stored in config file, rather than dynamically getting them from the matrix container
+	evt := mxevents.Wrap(&event.Event{
+		ID:       id.EventID(Backend.Matrix().Client().TxnID()),
+		Sender:   Backend.Matrix().Client().UserID,
+		Type:     event.EventMessage,
+		RoomID:   id.RoomID(RoomName),
+		Content:  event.Content{Parsed: content},
+		Unsigned: event.Unsigned{TransactionID: Backend.Matrix().Client().TxnID()},
+	})
+
+	return evt
 }
 
 func init() {

@@ -246,8 +246,8 @@ func (c *ClientWrapper) Logout() {
 }
 
 func (c *ClientWrapper) Start() {
-
-	c.OnLogin() //Initialize the syncer
+	c.cryptoOnLogin() //get crypto store from files if they exist
+	c.OnLogin()       //Initialize the syncer
 
 	if c.client == nil {
 		return

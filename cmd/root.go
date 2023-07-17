@@ -39,7 +39,7 @@ func addSubcommandGroups() {
 	rootCmd.AddCommand(rooms.RoomCmd)
 }
 
-// Set a variable pointing to the main client object (ifc.Thesgo)
+// Set a variable in each command package pointing to the main client object (ifc.Thesgo)
 func SetLinkToBackend(thesgo ifc.Thesgo) {
 	user.SetLinkToBackend(thesgo)
 	rooms.SetLinkToBackend(thesgo)
