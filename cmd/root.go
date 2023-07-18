@@ -17,7 +17,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "thesgo",
 	Short: "A PoC Matrix Client for a master's thesis",
-	Long: `A Matrix client with the minimum functionalities provided by the Matrix API, with the inclusion of 
+	Long: `A Matrix client with the minimum functionalities provided by the Matrix API, with the automatic inclusion of 
 	E2E encryption, and additional offline communication between clients for a future context of an IoT system
 	with multiple devices.`,
 	// Uncomment the following line if your bare application
