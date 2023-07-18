@@ -15,7 +15,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.14 // indirect
 	github.com/petermattis/goid v0.0.0-20180202154549-b0b1615b78e5 // indirect
 	github.com/rivo/uniseg v0.4.2 // indirect
-	github.com/spf13/cobra v1.7.0
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/term v0.9.0 // indirect
 	golang.org/x/text v0.10.0 // indirect
@@ -28,6 +27,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.17
 	github.com/rs/zerolog v1.29.1
 	github.com/sasha-s/go-deadlock v0.3.1
+	github.com/spf13/cobra v1.7.0
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
