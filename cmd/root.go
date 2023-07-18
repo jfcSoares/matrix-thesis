@@ -4,10 +4,11 @@ Copyright © 2023 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	//"strings"
+
+	shell "github.com/brianstrauch/cobra-shell"
 
 	"thesgo/cmd/rooms"
 	"thesgo/cmd/user"
@@ -46,20 +47,20 @@ var rootCmd = &cobra.Command{
 	with multiple devices.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
-	Run: func(cmd *cobra.Command, args []string) {
+	/*Run: func(cmd *cobra.Command, args []string) {
 		/*for {
 			result, err := prompt.Run()
 			if err != nil {
 				fmt.Printf("Prompt failed %v\n", err)
 				continue //continue and ask for prompt again if input was invalid
 			}
-		}*/
+		}
 		cmds := cmd.Commands()
 		for _, c := range cmds {
 			fmt.Println(c.Use)
 		}
 
-	},
+	},*/
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -72,7 +73,8 @@ func Execute() {
 }
 
 func addSubcommandGroups() {
-	rootCmd.AddCommand(user.UserCmd) //adds the user commands as a whole subgroup
+	rootCmd.AddCommand(shell.New(rootCmd, nil)) //adds an interactive shell
+	rootCmd.AddCommand(user.UserCmd)            //adds the user commands as a whole subgroup
 	rootCmd.AddCommand(rooms.RoomCmd)
 }
 
