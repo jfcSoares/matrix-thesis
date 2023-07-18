@@ -4,7 +4,10 @@ Copyright © 2023 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"fmt"
 	"os"
+
+	//"strings"
 
 	"thesgo/cmd/rooms"
 	"thesgo/cmd/user"
@@ -12,6 +15,27 @@ import (
 
 	"github.com/spf13/cobra"
 )
+
+/*
+// The validate function follows the required validator signature.
+func validate(input string) error {
+	strings.Contains(input, "user")
+	return err
+}
+
+// Each template displays the data received from the prompt with some formatting.
+templates := &promptui.PromptTemplates{
+	Prompt:  "{{ . }} ",
+	Valid:   "{{ . | green }} ",
+	Invalid: "{{ . | red }} ",
+	Success: "{{ . | bold }} ",
+}
+
+prompt := promptui.Prompt{
+	Label:     "Command",
+	Templates: templates,
+	Validate:  validate,
+}*/
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -22,7 +46,16 @@ var rootCmd = &cobra.Command{
 	with multiple devices.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Run: func(cmd *cobra.Command, args []string) {
+		/*for {
+			result, err := prompt.Run()
+			if err != nil {
+				fmt.Printf("Prompt failed %v\n", err)
+				continue //continue and ask for prompt again if input was invalid
+			}
+		}*/
+		fmt.Println(cmd.Commands())
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
