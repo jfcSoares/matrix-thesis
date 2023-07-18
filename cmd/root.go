@@ -54,7 +54,11 @@ var rootCmd = &cobra.Command{
 				continue //continue and ask for prompt again if input was invalid
 			}
 		}*/
-		fmt.Println(cmd.Commands())
+		cmds := cmd.Commands()
+		for _, c := range cmds {
+			fmt.Println(c.Use)
+		}
+
 	},
 }
 
