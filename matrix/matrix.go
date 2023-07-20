@@ -40,6 +40,8 @@ type ClientWrapper struct {
 
 	running bool
 
+	offline bool
+
 	stop chan bool
 }
 
@@ -93,10 +95,12 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 	}
 
 	if err != nil {
+		//c.offline = true, might be unsafe -> client might fail due to wrong access token and not by losing conn
 		c.logger.Error().Msg("failed to create mautrix client: " + err.Error())
 		return fmt.Errorf("failed to create mautrix client: %w", err)
 	}
 
+	c.offline = false
 	c.client.Log = c.initLogger()
 	c.client.DeviceID = c.config.DeviceID
 
@@ -165,9 +169,13 @@ func (c *ClientWrapper) IsStopped() chan bool {
 	return c.stop
 }
 
+func (c *ClientWrapper) IsOffline() bool {
+	return c.offline
+}
+
 // Initialized returns whether or not the matrix client is initialized, i.e., has been instantiated
 func (c *ClientWrapper) Initialized() bool {
-	return c.client != nil
+	return c.running
 }
 
 // Login sends a password login request with the given username and password.
