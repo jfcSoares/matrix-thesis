@@ -40,9 +40,11 @@ type ClientWrapper struct {
 
 	running bool
 
-	offline bool
+	disconnected bool
 
 	stop chan bool
+
+	runHost chan bool
 }
 
 var MinSpecVersion = mautrix.SpecV11
@@ -57,8 +59,9 @@ var (
 func NewWrapper(conf *config.Config) *ClientWrapper {
 
 	c := &ClientWrapper{
-		config:  conf, //decide how to load directories into this
-		running: false,
+		config:       conf,
+		running:      false,
+		disconnected: false,
 	}
 
 	c.initLogger()
@@ -100,7 +103,7 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 		return fmt.Errorf("failed to create mautrix client: %w", err)
 	}
 
-	c.offline = false
+	c.disconnected = false
 	c.client.Log = c.initLogger()
 	c.client.DeviceID = c.config.DeviceID
 
@@ -148,6 +151,7 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 	} //for posterity, but will probably not be required, since we know the properties of the server a priori
 
 	c.stop = make(chan bool, 1)
+	c.runHost = make(chan bool, 1)
 
 	if len(accessToken) > 0 {
 		go c.Start()
@@ -170,7 +174,7 @@ func (c *ClientWrapper) IsStopped() chan bool {
 }
 
 func (c *ClientWrapper) IsOffline() bool {
-	return c.offline
+	return c.disconnected
 }
 
 // Initialized returns whether or not the matrix client is initialized, i.e., has been instantiated
@@ -263,7 +267,7 @@ func (c *ClientWrapper) Start() {
 
 	c.logger.Info().Msg("Starting sync...")
 	c.running = true
-	c.client.StreamSyncMinAge = 30 * time.Minute
+	c.client.StreamSyncMinAge = 30 * time.Minute //syncs with the server every 30min
 	for {
 		select {
 		case <-c.stop:
@@ -347,8 +351,8 @@ func (c *ClientWrapper) OnLogin() {
 	c.syncer.OnEventType(event.StateRoomName, c.HandleMessage)
 	c.syncer.OnEventType(event.StateMember, c.HandleMembership)
 	c.syncer.OnEventType(event.StateEncryption, c.HandleRoomEncryption)
-	/*c.syncer.OnEventType(event.EphemeralEventReceipt, c.HandleReadReceipt)
-	c.syncer.OnEventType(event.EphemeralEventTyping, c.HandleTyping)
+	c.syncer.OnEventType(event.EphemeralEventReceipt, c.HandleReadReceipt)
+	/*c.syncer.OnEventType(event.EphemeralEventTyping, c.HandleTyping)
 	c.syncer.OnEventType(event.AccountDataDirectChats, c.HandleDirectChatInfo)
 	c.syncer.OnEventType(event.AccountDataPushRules, c.HandlePushRules)
 	c.syncer.OnEventType(event.AccountDataRoomTags, c.HandleTag)*/
@@ -782,7 +786,10 @@ func (c *ClientWrapper) HandleMessage(source mautrix.EventSource, mxEvent *event
 
 	//Possivelmente fazer alguma coisa com o conteudo da mensagem (se for um alerta de intruso por exemplo)
 
-	//Açoes para o UI talvez
+	c.SendReadReceipt(evt) //Spec recommends not sending the receipt right as the message is received, but
+	//in this case i think this is neglectable -> keep this in mind tho
+	//Talvez so mandar o receipt quando o user usar o commando da history de uma sala?
+
 }
 
 func (c *ClientWrapper) HandleRoomEncryption(source mautrix.EventSource, mxEvent *event.Event) {
@@ -876,4 +883,54 @@ func (c *ClientWrapper) processOwnMembershipChange(evt *event.Event) {
 	default:
 		return
 	}
+}
+
+func (c *ClientWrapper) HandleReadReceipt(source mautrix.EventSource, evt *event.Event) {
+	if source&mautrix.EventSourceLeave != 0 {
+		return
+	}
+
+	lastReadEvent := c.parseReadReceipt(evt)
+	if len(lastReadEvent) == 0 {
+		return
+	}
+
+	room := c.GetRoom(evt.RoomID)
+	if room != nil {
+		room.MarkRead(lastReadEvent)
+	}
+}
+
+func (c *ClientWrapper) parseReadReceipt(evt *event.Event) (largestTimestampEvent id.EventID) {
+	var largestTimestamp time.Time
+
+	for eventID, receipts := range *evt.Content.AsReceipt() {
+		myInfo, ok := receipts["m.read"][c.config.UserID]
+		if !ok {
+			continue
+		}
+
+		if myInfo.Timestamp.After(largestTimestamp) {
+			largestTimestamp = myInfo.Timestamp
+			largestTimestampEvent = eventID
+		}
+	}
+	return
+}
+
+//****************** OFFLINE COMMS *********************//
+
+func (c *ClientWrapper) StartOfflineHost() {
+
+	/*c.disconnected = false
+
+	if c.disconnected {
+		for {
+			select {
+			case <-c.runHost:
+
+			}
+		}
+	}*/
+
 }
