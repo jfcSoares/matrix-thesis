@@ -36,15 +36,19 @@ type ClientWrapper struct {
 
 	logger zerolog.Logger
 
-	//rooms *rooms.RoomCache //database for room information -> commented out, it is sitting on the config object now
-
 	running bool
 
 	disconnected bool
 
 	stop chan bool
 
-	runHost chan bool
+	sendOff chan offlineData
+}
+
+// struct to hold data to send to clients outside of matrix if needed
+type offlineData struct {
+	eventID id.EventID
+	users   []id.UserID
 }
 
 var MinSpecVersion = mautrix.SpecV11
@@ -151,11 +155,12 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 	} //for posterity, but will probably not be required, since we know the properties of the server a priori
 
 	c.stop = make(chan bool, 1)
-	c.runHost = make(chan bool, 1)
+	c.sendOff = make(chan offlineData, 1)
 
 	if len(accessToken) > 0 {
 		go c.Start()
 	}
+	go c.runOffline() //start routine to open a host for listening and/or sending offline comms
 
 	return nil
 }
@@ -525,20 +530,24 @@ func (c *ClientWrapper) JoinRoom(roomID id.RoomID, server string) (*rooms.Room, 
 }
 
 // Retrieves the list of members of the given room
-func (c *ClientWrapper) JoinedMembers(roomID id.RoomID) error {
+func (c *ClientWrapper) JoinedMembers(roomID id.RoomID) ([]id.UserID, error) {
 	resp, err := c.client.JoinedMembers(roomID)
+	keys := make([]id.UserID, len(resp.Joined))
 
 	if err != nil {
 		fmt.Println(err)
 		c.logger.Error().Err(err).Msg("could not get the list of members of the given room")
-		return err
+		return nil, err
 	} else {
+		i := 0
 		for key := range resp.Joined { //print out the room members' display names
 			fmt.Println(key)
+			keys[i] = key
+			i++
 		}
 	}
 
-	return nil
+	return keys, nil
 }
 
 func (c *ClientWrapper) FetchMembers(room *rooms.Room) error {
@@ -903,6 +912,9 @@ func (c *ClientWrapper) HandleReadReceipt(source mautrix.EventSource, evt *event
 
 func (c *ClientWrapper) parseReadReceipt(evt *event.Event) (largestTimestampEvent id.EventID) {
 	var largestTimestamp time.Time
+	var offline offlineData
+
+	var members, _ = c.JoinedMembers(evt.RoomID) //fetch from server the room member list
 
 	for eventID, receipts := range *evt.Content.AsReceipt() {
 		myInfo, ok := receipts["m.read"][c.config.UserID]
@@ -914,23 +926,43 @@ func (c *ClientWrapper) parseReadReceipt(evt *event.Event) (largestTimestampEven
 			largestTimestamp = myInfo.Timestamp
 			largestTimestampEvent = eventID
 		}
+
+		//********** OFFLINE COMMS LOGIC ***********//
+
+		ackUsers := receipts["m.read"] //get all users that saw the event with eventID
+		//compare them against room members
+		for _, user := range members {
+			if _, ok := ackUsers[user]; !ok {
+				offline.users = append(offline.users, user)
+			}
+		}
+
+		//if at least one user did not send a receipt for this event
+		if len(offline.users) > 0 {
+			offline.eventID = eventID
+			c.sendOff <- offline //send data to goroutine
+		}
+
+		//preferível mandar para cada user individualmente, i.e., em cada iteração do loop e bloquear até terminar, ou como está?
+
+		//go c.runOffline(eventID, offline) //this might launch a great number of threads eventually
 	}
 	return
 }
 
 //****************** OFFLINE COMMS *********************//
 
-func (c *ClientWrapper) StartOfflineHost() {
+func (c *ClientWrapper) runOffline() {
 
-	/*c.disconnected = false
+	for {
+		select {
+		case <-c.sendOff:
 
-	if c.disconnected {
-		for {
-			select {
-			case <-c.runHost:
-
-			}
+		default:
 		}
-	}*/
+	}
+}
+
+func (c *ClientWrapper) sendOffline(eventID id.EventID, usersToSend []id.UserID) {
 
 }
