@@ -33,7 +33,7 @@ type MatrixContainer interface {
 	InviteUser(roomID id.RoomID, reason, user string) error
 
 	FetchMembers(room *rooms.Room) error
-	JoinedMembers(roomID id.RoomID) error //not sure if this is better than fetchMembers
+	JoinedMembers(roomID id.RoomID) ([]id.UserID, error) //not sure if this is better than fetchMembers
 	GetHistory(room *rooms.Room, limit int, dbPointer uint64) ([]*mxevents.Event, uint64, error)
 	GetEvent(room *rooms.Room, eventID id.EventID) (*mxevents.Event, error)
 	GetRoom(roomID id.RoomID) *rooms.Room

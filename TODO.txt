@@ -7,3 +7,7 @@
 
 -> Acrescentar funcionalidade da comunicação offline por proximidade
 
+-> Parametros de encriptação (numero de mensagens ou tempo ate a sessao ser substituida) configuravel?
+
+->
+
