@@ -2,7 +2,9 @@
 package matrix
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
@@ -14,6 +16,15 @@ import (
 	"thesgo/debug"
 	"thesgo/matrix/mxevents"
 	"thesgo/matrix/rooms"
+	"thesgo/offline"
+
+	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
+
+	"github.com/libp2p/go-libp2p"
+	cryp "github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
+	libp2ptls "github.com/libp2p/go-libp2p/p2p/security/tls"
 
 	"github.com/rs/zerolog"
 
@@ -43,12 +54,6 @@ type ClientWrapper struct {
 	stop chan bool
 
 	sendOff chan offlineData
-}
-
-// struct to hold data to send to clients outside of matrix if needed
-type offlineData struct {
-	eventID id.EventID
-	users   []id.UserID
 }
 
 var MinSpecVersion = mautrix.SpecV11
@@ -132,7 +137,7 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 		}
 	}*/ //just in case, but probably will not be necessary
 
-	if !SkipVersionCheck && (!isStartup || len(c.client.AccessToken) > 0) {
+	if !SkipVersionCheck && (!isStartup || len(c.client.AccessToken) > 0) { //sanity check
 		c.logger.Info().Msg("Checking versions that " + c.client.HomeserverURL.String() + " supports.")
 		resp, err := c.client.Versions()
 		if err != nil {
@@ -152,10 +157,10 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 		} else {
 			c.logger.Info().Msg("Server supports modern spec versions")
 		}
-	} //for posterity, but will probably not be required, since we know the properties of the server a priori
+	}
 
 	c.stop = make(chan bool, 1)
-	c.sendOff = make(chan offlineData, 1)
+	c.sendOff = make(chan offlineData, 1) //possibly making this a buffered channel might be good
 
 	if len(accessToken) > 0 {
 		go c.Start()
@@ -916,6 +921,8 @@ func (c *ClientWrapper) parseReadReceipt(evt *event.Event) (largestTimestampEven
 
 	var members, _ = c.JoinedMembers(evt.RoomID) //fetch from server the room member list
 
+	//map[id.EventID]map[ReceiptType]map[id.UserID]ReadReceipt
+
 	for eventID, receipts := range *evt.Content.AsReceipt() {
 		myInfo, ok := receipts["m.read"][c.config.UserID]
 		if !ok {
@@ -940,29 +947,176 @@ func (c *ClientWrapper) parseReadReceipt(evt *event.Event) (largestTimestampEven
 		//if at least one user did not send a receipt for this event
 		if len(offline.users) > 0 {
 			offline.eventID = eventID
+			offline.roomID = evt.RoomID
 			c.sendOff <- offline //send data to goroutine
 		}
-
-		//preferível mandar para cada user individualmente, i.e., em cada iteração do loop e bloquear até terminar, ou como está?
-
-		//go c.runOffline(eventID, offline) //this might launch a great number of threads eventually
 	}
 	return
 }
 
 //****************** OFFLINE COMMS *********************//
 
+const protocolID = "/matrix-offline/1.0.0"
+
+// struct to hold data to send to clients outside of matrix if needed
+type offlineData struct {
+	eventID id.EventID  //the event to send
+	roomID  id.RoomID   //the room to whom the event belongs to
+	users   []id.UserID //the users that did not receive the event
+}
+
+func newHost() host.Host {
+	// Set your own keypair
+	//Would like to use matrix's Ed25519 fingerprint key pair, but the private part is never disclosed to the API
+	priv, _, err := cryp.GenerateKeyPair(
+		cryp.Ed25519, // Select your key type. Ed25519 are nice short
+		-1,           // Select key length when possible (i.e. RSA).
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	//might need some tuning - want small groups
+	connmgr, err := connmgr.NewConnManager(
+		10, // Lowwater
+		20, // HighWater,
+		connmgr.WithGracePeriod(time.Minute),
+	)
+	if err != nil {
+		panic(err)
+	}
+	host, err := libp2p.New(
+		// Use the keypair we generated
+		libp2p.Identity(priv),
+		// Multiple listen addresses
+		libp2p.ListenAddrStrings(
+			"/ip4/0.0.0.0/tcp/9000", // regular tcp connections
+			//"/ip4/0.0.0.0/udp/9000/quic", // a UDP endpoint for the QUIC transport
+		),
+		// support TLS connections
+		libp2p.Security(libp2ptls.ID, libp2ptls.New),
+		// support any other default transports (TCP)
+		libp2p.DefaultTransports,
+		// Let's prevent our peer from having too many
+		// connections by attaching a connection manager.
+		libp2p.ConnectionManager(connmgr),
+		// Attempt to open ports using uPNP for NATed hosts.
+		libp2p.NATPortMap(),
+		// If you want to help other peers to figure out if they are behind
+		// NATs, you can launch the server-side of AutoNAT too (AutoRelay
+		// already runs the client)
+		//
+		// This service is highly rate-limited and should not cause any
+		// performance issues.
+		libp2p.EnableNATService(),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	return host
+}
+
 func (c *ClientWrapper) runOffline() {
 
+	// The context governs the lifetime of the libp2p node.
+	// Cancelling it will stop the host.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	host := newHost()
+
+	defer host.Close()
+	host.SetStreamHandler(protocolID, c.handleIncomingStream)
+
+	peerChan := offline.InitMDNS(host, "matrix-offline")
 	for {
 		select {
-		case <-c.sendOff:
+		case <-c.sendOff: //if there is something to send, look for peers
+			for { // allows multiple peers to join
+				peer := <-peerChan // will block until we discover a peer
+				fmt.Println("Found peer:", peer, ", connecting")
+				c.logger.Info().Msg("Found peer: " + peer.String() + ", connecting")
 
+				if err := host.Connect(ctx, peer); err != nil {
+					fmt.Println("Connection failed:", err)
+					c.logger.Err(err).Msg("Connection failed")
+					continue
+				}
+
+				// open a stream, this stream will be handled by handleStream other end
+				stream, err := host.NewStream(ctx, peer.ID, protocolID)
+
+				if err != nil {
+					fmt.Println("Stream open failed", err)
+					c.logger.Err(err).Msg("Could not open stream")
+				} else {
+					rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
+
+					go c.sendOffline(rw)
+					go c.readData(rw)
+					fmt.Println("Connected to:", peer)
+					c.logger.Info().Msg("Connected to: " + peer.String())
+				}
+
+				//stream.Close() //manter aberto
+			}
 		default:
+			c.logger.Info().Msg("Listening for connections in case we are offline")
+			select {} //hang forever until the other case is true
 		}
 	}
 }
 
-func (c *ClientWrapper) sendOffline(eventID id.EventID, usersToSend []id.UserID) {
+func (c *ClientWrapper) handleIncomingStream(s network.Stream) {
+	c.logger.Info().Msg("Got a new stream!")
+
+	// Create a buffer stream for non blocking read and write.
+	rw := bufio.NewReadWriter(bufio.NewReader(s), bufio.NewWriter(s))
+
+	go c.readData(rw)
+	go c.sendOffline(rw)
+
+	// stream 's' will stay open until you close it (or the other side closes it).
+}
+
+func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
+	toSend := <-c.sendOff
+	room := c.GetRoom(toSend.roomID)
+	evt, _ := c.GetEvent(room, toSend.eventID)
+
+	for _, user := range toSend.users {
+		deviceID, _ := rw.ReadString('\n') //receive deviceID from user
+		device := make(mautrix.DeviceIDList, 1)
+		device = append(device, (id.DeviceID(deviceID)))
+
+		respKey, err := c.client.QueryKeys(&mautrix.ReqQueryKeys{
+			DeviceKeys: mautrix.DeviceKeysRequest{
+				user: device,
+			},
+			Timeout: 10000,
+		})
+
+		if err != nil {
+			c.logger.Err(err).Msg("Could not obtain user's identity key")
+		}
+
+		//obtain the receiving user's identity (or sender) key from server
+		idKey := respKey.DeviceKeys[user][device[0]].Keys.GetCurve25519(device[0])
+
+		if b := c.crypto.CryptoStore.HasSession(idKey); b {
+			encrypted, err := c.crypto.EncryptMegolmEvent(context.TODO(), evt.RoomID, evt.Type, &evt.Content)
+			if err != nil {
+				c.logger.Error().Err(err).Msg("Could not encrypt the specified event")
+			}
+			evt.Type = event.EventEncrypted
+			evt.Content = event.Content{Parsed: encrypted}
+			byt, _ := json.Marshal(evt)
+			rw.Write(byt)
+		}
+	}
+}
+
+func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 
 }

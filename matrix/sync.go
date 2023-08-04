@@ -20,10 +20,9 @@ type ThesgoSyncer struct {
 	FirstSyncDone     bool
 	InitDoneCallback  func()
 	FirstDoneCallback func()
-	//Progress          ifc.SyncingModal
 }
 
-// NewThesgoSyncer returns an instantiated GomuksSyncer
+// NewThesgoSyncer returns an instantiated ThesgoSyncer
 func NewThesgoSyncer(rooms *rooms.RoomCache) *ThesgoSyncer {
 	return &ThesgoSyncer{
 		rooms:           rooms,

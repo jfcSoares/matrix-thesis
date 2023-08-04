@@ -18,8 +18,6 @@ import (
 	"maunium.net/go/mautrix/id"
 	"maunium.net/go/mautrix/pushrules"
 
-	"go.mau.fi/tcell"
-
 	"thesgo/matrix/rooms"
 )
 
@@ -63,26 +61,6 @@ func init() {
 
 func (up *UserPreferences) EnableInlineURLs() bool {
 	return up.InlineURLMode == "enable" || (InlineURLsProbablySupported && up.InlineURLMode != "disable")
-}
-
-type Keybind struct {
-	Mod tcell.ModMask
-	Key tcell.Key
-	Ch  rune
-}
-
-type ParsedKeybindings struct {
-	Main   map[Keybind]string
-	Room   map[Keybind]string
-	Modal  map[Keybind]string
-	Visual map[Keybind]string
-}
-
-type RawKeybindings struct {
-	Main   map[string]string `yaml:"main,omitempty"`
-	Room   map[string]string `yaml:"room,omitempty"`
-	Modal  map[string]string `yaml:"modal,omitempty"`
-	Visual map[string]string `yaml:"visual,omitempty"`
 }
 
 // Config contains the main config of the client => the syncstore for the matrix client
@@ -223,49 +201,6 @@ func (config *Config) LoadPreferences() {
 func (config *Config) SavePreferences() {
 	config.save("user preferences", config.CacheDir, "preferences.yaml", &config.Preferences)
 }
-
-/*//go:embed keybindings.yaml
-var DefaultKeybindings string
-
-func parseKeybindings(input map[string]string) (output map[Keybind]string) {
-	output = make(map[Keybind]string, len(input))
-	for shortcut, action := range input {
-		mod, key, ch, err := cbind.Decode(shortcut)
-		if err != nil {
-			panic(fmt.Errorf("failed to parse keybinding %s -> %s: %w", shortcut, action, err))
-		}
-		// TODO find out if other keys are parsed incorrectly like this
-		if key == tcell.KeyEscape {
-			ch = 0
-		}
-		parsedShortcut := Keybind{
-			Mod: mod,
-			Key: key,
-			Ch:  ch,
-		}
-		output[parsedShortcut] = action
-	}
-	return
-}
-
-func (config *Config) LoadKeybindings() {
-	var inputConfig RawKeybindings
-
-	err := yaml.Unmarshal([]byte(DefaultKeybindings), &inputConfig)
-	if err != nil {
-		panic(fmt.Errorf("failed to unmarshal default keybindings: %w", err))
-	}
-	_ = config.load("keybindings", config.Dir, "keybindings.yaml", &inputConfig)
-
-	config.Keybindings.Main = parseKeybindings(inputConfig.Main)
-	config.Keybindings.Room = parseKeybindings(inputConfig.Room)
-	config.Keybindings.Modal = parseKeybindings(inputConfig.Modal)
-	config.Keybindings.Visual = parseKeybindings(inputConfig.Visual)
-}
-
-func (config *Config) SaveKeybindings() {
-	config.save("keybindings", config.Dir, "keybindings.yaml", &config.Keybindings)
-}*/
 
 func (config *Config) LoadAuthCache() {
 	err := config.load("auth cache", config.CacheDir, "auth-cache.yaml", &config.AuthCache)
