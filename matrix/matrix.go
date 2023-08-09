@@ -779,30 +779,9 @@ func (c *ClientWrapper) HandleMessage(source mautrix.EventSource, mxEvent *event
 		return
 	}
 
-	events, err := c.history.Append(room, []*event.Event{mxEvent}) //add the newly-received event to room history
-	if err != nil {
-		fmt.Printf("Failed to add event %s to history: %v", mxEvent.ID, err)
-		c.logger.Err(err).Msg("Failed to add event " + mxEvent.ID.String() + " to history")
-	}
-
-	evt := events[0]
-	if !c.config.AuthCache.InitialSyncDone {
-		room.LastReceivedMessage = time.Unix(evt.Timestamp/1000, evt.Timestamp%1000*1000)
-		return
-	}
-
-	c.logger.Info().
-		Str("sender", evt.Sender.String()).
-		Str("type", evt.Type.String()).
-		Str("id", evt.ID.String()).
-		Str("body", evt.Content.AsMessage().Body).
-		Msg("Received message")
+	c.addMessageToHistory(room, mxEvent)
 
 	//Possivelmente fazer alguma coisa com o conteudo da mensagem (se for um alerta de intruso por exemplo)
-
-	c.SendReadReceipt(evt) //Spec recommends not sending the receipt right as the message is received, but
-	//in this case i think this is neglectable -> keep this in mind tho
-	//Talvez so mandar o receipt quando o user usar o commando da history de uma sala?
 
 }
 
@@ -954,6 +933,33 @@ func (c *ClientWrapper) parseReadReceipt(evt *event.Event) (largestTimestampEven
 	return
 }
 
+// Auxiliary method called whenever a message is received, whether the client is offline or online (through handleMessage)
+func (c *ClientWrapper) addMessageToHistory(room *rooms.Room, mxEvent *event.Event) {
+	events, err := c.history.Append(room, []*event.Event{mxEvent}) //add the newly-received event to room history
+	if err != nil {
+		fmt.Printf("Failed to add event %s to history: %v", mxEvent.ID, err)
+		c.logger.Err(err).Msg("Failed to add event " + mxEvent.ID.String() + " to history")
+	}
+
+	evt := events[0]
+	if !c.config.AuthCache.InitialSyncDone {
+		room.LastReceivedMessage = time.Unix(evt.Timestamp/1000, evt.Timestamp%1000*1000)
+		return
+	}
+
+	c.logger.Info().
+		Str("sender", evt.Sender.String()).
+		Str("type", evt.Type.String()).
+		Str("id", evt.ID.String()).
+		Str("body", evt.Content.AsMessage().Body).
+		Msg("Received message")
+
+	//this will fail if the device is offline
+	c.SendReadReceipt(evt) //Spec recommends not sending the receipt right as the message is received, but
+	//in this case i think this is neglectable -> keep this in mind tho
+	//Talvez so mandar o receipt quando o user usar o commando da history de uma sala?
+}
+
 //****************** OFFLINE COMMS *********************//
 
 const protocolID = "/matrix-offline/1.0.0"
@@ -1053,10 +1059,9 @@ func (c *ClientWrapper) runOffline() {
 				} else {
 					rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
 
-					go c.sendOffline(rw)
-					go c.readData(rw)
 					fmt.Println("Connected to:", peer)
 					c.logger.Info().Msg("Connected to: " + peer.String())
+					go c.sendOffline(rw)
 				}
 
 				//stream.Close() //manter aberto
@@ -1074,8 +1079,8 @@ func (c *ClientWrapper) handleIncomingStream(s network.Stream) {
 	// Create a buffer stream for non blocking read and write.
 	rw := bufio.NewReadWriter(bufio.NewReader(s), bufio.NewWriter(s))
 
+	//if stream is incoming, it means we are offline, therefore only need to do the receiving end of the logic
 	go c.readData(rw)
-	go c.sendOffline(rw)
 
 	// stream 's' will stay open until you close it (or the other side closes it).
 }
@@ -1101,9 +1106,13 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 			c.logger.Err(err).Msg("Could not obtain user's identity key")
 		}
 
-		//obtain the receiving user's identity (or sender) key from server
-		idKey := respKey.DeviceKeys[user][device[0]].Keys.GetCurve25519(device[0])
+		//The receiving user's keys, obtained from the server
+		idKey := respKey.DeviceKeys[user][device[0]].Keys.GetCurve25519(device[0]) //identity key
+		edKey := respKey.DeviceKeys[user][device[0]].Keys.GetEd25519(device[0])    //fingerprint key
+		session, _ := c.crypto.CryptoStore.GetOutboundGroupSession(toSend.roomID)
 
+		//If there is an established Olm session with the identity key of the offline client, first assume a Megolm session has also been shared with the
+		//offline device previously and send the encrypted event as normal. In case the offline client cannot decrypt it, then share the megolm session a posteriori.
 		if b := c.crypto.CryptoStore.HasSession(idKey); b {
 			encrypted, err := c.crypto.EncryptMegolmEvent(context.TODO(), evt.RoomID, evt.Type, &evt.Content)
 			if err != nil {
@@ -1111,12 +1120,90 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 			}
 			evt.Type = event.EventEncrypted
 			evt.Content = event.Content{Parsed: encrypted}
-			byt, _ := json.Marshal(evt)
+			byt, err := json.Marshal(evt) //ver se é necessário algum error handling e se é necessário passar pointer
+			if err != nil {
+				c.logger.Err(err).Msg("Could not marshal event bytes")
+			}
 			rw.Write(byt)
+
+			//Wait for the other client's response here
+
+			olmSesh, _ := c.crypto.CryptoStore.GetLatestSession(idKey)
+			olmContent := c.encryptOlm(idKey, edKey, olmSesh, user, event.ToDeviceRoomKey, session.ShareContent())
+			olmEvent := &mxevents.Event{
+				Event: &event.Event{
+					Type:    event.ToDeviceEncrypted,
+					Content: event.Content{Parsed: olmContent},
+				},
+			}
+			olmBytes, err := json.Marshal(olmEvent)
+			if err != nil {
+				c.logger.Err(err).Msg("Could not marshal olm event bytes")
+			}
+			rw.Write(olmBytes)
+
 		}
 	}
 }
 
 func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
+	//Send device ID to identify itself (broadly)
+	rw.WriteString(string(c.client.DeviceID))
 
+	//Next, it will receive the encrypted event
+	evtBytes, err := rw.ReadBytes('\n')
+	if err != nil {
+		// if it reaches this, need to find the correct delim
+		c.logger.Error().Msg("Failed to read bytes from stream")
+	}
+
+	var room *rooms.Room
+	var encrypted *mxevents.Event
+	json.Unmarshal(evtBytes, encrypted)
+	evt, err := c.crypto.DecryptMegolmEvent(context.TODO(), encrypted.Event)
+	if err != nil {
+		c.logger.Err(err).Msg("Could not decrypt event received offline")
+		//Somehow ask for megolm session details here -> m.room.key request event is the obvious choice, but we do not know the sessionID for which to ask the keys for
+	}
+
+	room = c.GetOrCreateRoom(evt.RoomID)
+	c.addMessageToHistory(room, evt)
+}
+
+// Auxiliary function to encrypt megolm session materials with Olm for offline communication if needed
+func (c *ClientWrapper) encryptOlm(idKey id.Curve25519, fingerprintKey id.Ed25519, session *crypto.OlmSession, user id.UserID, evtType event.Type, content event.Content) *event.EncryptedEventContent {
+	evt := &crypto.DecryptedOlmEvent{
+		Sender:        c.client.UserID,
+		SenderDevice:  c.client.DeviceID,
+		Keys:          crypto.OlmEventKeys{Ed25519: c.crypto.GetAccount().SigningKey()},
+		Recipient:     user,
+		RecipientKeys: crypto.OlmEventKeys{Ed25519: fingerprintKey},
+		Type:          evtType,
+		Content:       content,
+	}
+	plaintext, err := json.Marshal(evt)
+	if err != nil {
+		panic(err)
+	}
+
+	c.logger.Debug().
+		Str("recipient_identity_key", idKey.String()).
+		Str("olm_session_id", session.ID().String()).
+		Str("olm_session_description", session.Describe()).
+		Msg("Encrypting olm message")
+	msgType, ciphertext := session.Encrypt(plaintext)
+	err = c.crypto.CryptoStore.UpdateSession(idKey, session)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("Failed to update olm session in crypto store after encrypting")
+	}
+	return &event.EncryptedEventContent{
+		Algorithm: id.AlgorithmOlmV1,
+		SenderKey: c.crypto.GetAccount().IdentityKey(),
+		OlmCiphertext: event.OlmCiphertexts{
+			idKey: {
+				Type: msgType,
+				Body: string(ciphertext),
+			},
+		},
+	}
 }
