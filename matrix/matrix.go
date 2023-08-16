@@ -19,6 +19,7 @@ import (
 	"thesgo/offline"
 
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
+	"golang.org/x/exp/slices"
 
 	"github.com/libp2p/go-libp2p"
 	cryp "github.com/libp2p/go-libp2p/core/crypto"
@@ -960,6 +961,29 @@ func (c *ClientWrapper) addMessageToHistory(room *rooms.Room, mxEvent *event.Eve
 	//Talvez so mandar o receipt quando o user usar o commando da history de uma sala?
 }
 
+func (c *ClientWrapper) FetchDeviceKeys(userToFetch id.UserID, deviceToFetch id.DeviceID) (id.Curve25519, id.Ed25519, error) {
+	device := make(mautrix.DeviceIDList, 1)
+	device = append(device, (id.DeviceID(deviceToFetch)))
+
+	respKey, err := c.client.QueryKeys(&mautrix.ReqQueryKeys{ //turn into a function
+		DeviceKeys: mautrix.DeviceKeysRequest{
+			userToFetch: device,
+		},
+		Timeout: 10000,
+	})
+
+	if err != nil {
+		c.logger.Err(err).Msg("Could not obtain user's device keys")
+		return "", "", err
+	}
+
+	//The receiving user's keys, obtained from the server
+	idKey := respKey.DeviceKeys[userToFetch][device[0]].Keys.GetCurve25519(device[0]) //identity key
+	edKey := respKey.DeviceKeys[userToFetch][device[0]].Keys.GetEd25519(device[0])    //fingerprint key
+
+	return idKey, edKey, nil
+}
+
 //****************** OFFLINE COMMS *********************//
 
 const protocolID = "/matrix-offline/1.0.0"
@@ -1050,7 +1074,7 @@ func (c *ClientWrapper) runOffline() {
 					continue
 				}
 
-				// open a stream, this stream will be handled by handleStream other end
+				// open a stream, this stream will be handled by handleIncomingStream other end
 				stream, err := host.NewStream(ctx, peer.ID, protocolID)
 
 				if err != nil {
@@ -1068,7 +1092,7 @@ func (c *ClientWrapper) runOffline() {
 			}
 		default:
 			c.logger.Info().Msg("Listening for connections in case we are offline")
-			select {} //hang forever until the other case is true
+			select {} //thread hangs forever until the other case is true
 		}
 	}
 }
@@ -1090,26 +1114,13 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 	room := c.GetRoom(toSend.roomID)
 	evt, _ := c.GetEvent(room, toSend.eventID)
 
-	for _, user := range toSend.users {
-		deviceID, _ := rw.ReadString('\n') //receive deviceID from user
-		device := make(mautrix.DeviceIDList, 1)
-		device = append(device, (id.DeviceID(deviceID)))
+	offlineHost := c.exchangeCredentials(rw)
 
-		respKey, err := c.client.QueryKeys(&mautrix.ReqQueryKeys{
-			DeviceKeys: mautrix.DeviceKeysRequest{
-				user: device,
-			},
-			Timeout: 10000,
-		})
-
+	if slices.Contains(toSend.users, offlineHost.UserID) {
+		idKey, edKey, err := c.FetchDeviceKeys(offlineHost.UserID, id.DeviceID(offlineHost.DeviceID))
 		if err != nil {
-			c.logger.Err(err).Msg("Could not obtain user's identity key")
+			return
 		}
-
-		//The receiving user's keys, obtained from the server
-		idKey := respKey.DeviceKeys[user][device[0]].Keys.GetCurve25519(device[0]) //identity key
-		edKey := respKey.DeviceKeys[user][device[0]].Keys.GetEd25519(device[0])    //fingerprint key
-		session, _ := c.crypto.CryptoStore.GetOutboundGroupSession(toSend.roomID)
 
 		//If there is an established Olm session with the identity key of the offline client, first assume a Megolm session has also been shared with the
 		//offline device previously and send the encrypted event as normal. In case the offline client cannot decrypt it, then share the megolm session a posteriori.
@@ -1120,16 +1131,23 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 			}
 			evt.Type = event.EventEncrypted
 			evt.Content = event.Content{Parsed: encrypted}
-			byt, err := json.Marshal(evt) //ver se é necessário algum error handling e se é necessário passar pointer
+			byt, err := json.Marshal(evt)
 			if err != nil {
 				c.logger.Err(err).Msg("Could not marshal event bytes")
 			}
 			rw.Write(byt)
 
 			//Wait for the other client's response here
+			evtBytes, _ := rw.ReadBytes('\n')
+
+			var keyReq *mxevents.Event
+			json.Unmarshal(evtBytes, keyReq)
+			originalContent, _ := evt.Content.Parsed.(*event.RoomKeyRequestEventContent)
+			forwardedRoomKey, _ := c.parseKeyRequestEvent(originalContent)
 
 			olmSesh, _ := c.crypto.CryptoStore.GetLatestSession(idKey)
-			olmContent := c.encryptOlm(idKey, edKey, olmSesh, user, event.ToDeviceRoomKey, session.ShareContent())
+
+			olmContent := c.encryptOlm(idKey, edKey, olmSesh, offlineHost.UserID, event.ToDeviceForwardedRoomKey, forwardedRoomKey)
 			olmEvent := &mxevents.Event{
 				Event: &event.Event{
 					Type:    event.ToDeviceEncrypted,
@@ -1142,14 +1160,93 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 			}
 			rw.Write(olmBytes)
 
-		}
+		} //maybe add else clause here, even though it probably will never happen
 	}
 }
 
 func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
-	//Send device ID to identify itself (broadly)
-	rw.WriteString(string(c.client.DeviceID))
+	hostDevice := c.exchangeCredentials(rw)
+	senderCredentials := map[id.UserID][]id.DeviceID{hostDevice.UserID: {hostDevice.DeviceID}}
 
+	var room *rooms.Room
+	var missingEvt *mxevents.Event
+	var evt *event.Event
+	var err error
+
+	missingEvt = c.readBytes(rw)
+	evt, err = c.crypto.DecryptMegolmEvent(context.TODO(), missingEvt.Event)
+
+	if existing, _ := c.history.Get(room, evt.ID); existing != nil {
+		c.logger.Info().Msg("Event is already stored, probably was already sent by another host")
+		return
+	}
+
+	if err != nil {
+		c.logger.Err(err).Msg("Could not decrypt event received offline")
+
+		//Ask for megolm session details here -> build m.room.key.request event
+		keyReq := c.buildKeyRequest(evt.RoomID, evt.Content.AsEncrypted().SenderKey, evt.Content.AsEncrypted().SessionID, senderCredentials)
+		c.writeBytes(rw, keyReq)
+
+		//Receive encrypted megolm session
+		encrypted := c.readBytes(rw)
+
+		//Decrypt the event with Olm
+		decryptedEvt, err := c.decryptOlm(context.Background(), encrypted.Event)
+		if err != nil {
+			c.logger.Err(err).Msg("Could not decrypt olm event")
+		}
+		decryptedContent := decryptedEvt.Content.Parsed.(*event.ForwardedRoomKeyEventContent)
+
+		//Update the megolm session
+		if c.importForwardedRoomKey(context.Background(), decryptedEvt, decryptedContent) {
+			c.logger.Trace().Msg("Handled forwarded room key event")
+			//Should now be able to decrypt
+			evt, _ = c.crypto.DecryptMegolmEvent(context.TODO(), missingEvt.Event) //not expecting an err here
+		}
+	}
+
+	room = c.GetOrCreateRoom(evt.RoomID)
+	c.addMessageToHistory(room, evt)
+}
+
+func (c *ClientWrapper) exchangeCredentials(rw *bufio.ReadWriter) *id.Device {
+	//send our credentials to connected host
+	selfID, err := c.crypto.CryptoStore.GetDevice(c.client.UserID, c.client.DeviceID)
+	if err != nil { //since the store used by the crypto module is a db, this probably won't fail while offline
+		c.logger.Err(err).Msg("Could not fetch own device info from crypto store")
+	}
+
+	marshalled, _ := json.Marshal(selfID)
+	rw.Write(marshalled)
+
+	//receive other host's client credentials
+	var hostDevice *id.Device
+	bytes, _ := rw.ReadBytes('\n')
+	json.Unmarshal(bytes, hostDevice)
+
+	//Should be safe to call both on and offline
+	if trusted := c.crypto.IsDeviceTrusted(hostDevice); !trusted {
+		c.logger.Info().Msg("Host device is not trusted")
+		return nil
+	}
+
+	return hostDevice
+
+}
+
+func (c *ClientWrapper) writeBytes(rw *bufio.ReadWriter, evt *mxevents.Event) {
+	reqBytes, err := json.Marshal(evt)
+	if err != nil {
+		c.logger.Err(err).Msg("Could not marshal key request event bytes")
+	}
+
+	if _, err := rw.Write(reqBytes); err != nil {
+		c.logger.Error().Msg("Could not send bytes to stream")
+	}
+}
+
+func (c *ClientWrapper) readBytes(rw *bufio.ReadWriter) *mxevents.Event {
 	//Next, it will receive the encrypted event
 	evtBytes, err := rw.ReadBytes('\n')
 	if err != nil {
@@ -1157,53 +1254,8 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 		c.logger.Error().Msg("Failed to read bytes from stream")
 	}
 
-	var room *rooms.Room
-	var encrypted *mxevents.Event
-	json.Unmarshal(evtBytes, encrypted)
-	evt, err := c.crypto.DecryptMegolmEvent(context.TODO(), encrypted.Event)
-	if err != nil {
-		c.logger.Err(err).Msg("Could not decrypt event received offline")
-		//Somehow ask for megolm session details here -> m.room.key request event is the obvious choice, but we do not know the sessionID for which to ask the keys for
-	}
+	var evt *mxevents.Event
+	json.Unmarshal(evtBytes, evt)
 
-	room = c.GetOrCreateRoom(evt.RoomID)
-	c.addMessageToHistory(room, evt)
-}
-
-// Auxiliary function to encrypt megolm session materials with Olm for offline communication if needed
-func (c *ClientWrapper) encryptOlm(idKey id.Curve25519, fingerprintKey id.Ed25519, session *crypto.OlmSession, user id.UserID, evtType event.Type, content event.Content) *event.EncryptedEventContent {
-	evt := &crypto.DecryptedOlmEvent{
-		Sender:        c.client.UserID,
-		SenderDevice:  c.client.DeviceID,
-		Keys:          crypto.OlmEventKeys{Ed25519: c.crypto.GetAccount().SigningKey()},
-		Recipient:     user,
-		RecipientKeys: crypto.OlmEventKeys{Ed25519: fingerprintKey},
-		Type:          evtType,
-		Content:       content,
-	}
-	plaintext, err := json.Marshal(evt)
-	if err != nil {
-		panic(err)
-	}
-
-	c.logger.Debug().
-		Str("recipient_identity_key", idKey.String()).
-		Str("olm_session_id", session.ID().String()).
-		Str("olm_session_description", session.Describe()).
-		Msg("Encrypting olm message")
-	msgType, ciphertext := session.Encrypt(plaintext)
-	err = c.crypto.CryptoStore.UpdateSession(idKey, session)
-	if err != nil {
-		c.logger.Error().Err(err).Msg("Failed to update olm session in crypto store after encrypting")
-	}
-	return &event.EncryptedEventContent{
-		Algorithm: id.AlgorithmOlmV1,
-		SenderKey: c.crypto.GetAccount().IdentityKey(),
-		OlmCiphertext: event.OlmCiphertexts{
-			idKey: {
-				Type: msgType,
-				Body: string(ciphertext),
-			},
-		},
-	}
+	return evt
 }

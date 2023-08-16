@@ -32,7 +32,7 @@ func (c *ClientWrapper) initCrypto() error {
 	if err != nil {
 		return fmt.Errorf("failed to upgrade crypto state store: %w", err)
 	}
-	
+
 	//this flow is if we do not use the gomuks/config package
 	/*if c.client.Store == nil {
 		c.client.Store = cryptoStore
