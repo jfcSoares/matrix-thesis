@@ -884,27 +884,27 @@ func (c *ClientWrapper) HandleReadReceipt(source mautrix.EventSource, evt *event
 		return
 	}
 
-	lastReadEvent := c.parseReadReceipt(evt)
+	room := c.GetRoom(evt.RoomID)
+	lastReadEvent := c.parseReadReceipt(room, evt)
 	if len(lastReadEvent) == 0 {
 		return
 	}
 
-	room := c.GetRoom(evt.RoomID)
 	if room != nil {
 		room.MarkRead(lastReadEvent)
 	}
 }
 
-func (c *ClientWrapper) parseReadReceipt(evt *event.Event) (largestTimestampEvent id.EventID) {
+func (c *ClientWrapper) parseReadReceipt(room *rooms.Room, evt *event.Event) (largestTimestampEvent id.EventID) {
 	var largestTimestamp time.Time
 	var offline offlineData
 
-	var members, _ = c.JoinedMembers(evt.RoomID) //fetch from server the room member list
+	var members, _ = c.JoinedMembers(evt.RoomID) //fetch from server
 
 	//map[id.EventID]map[ReceiptType]map[id.UserID]ReadReceipt
 
 	for eventID, receipts := range *evt.Content.AsReceipt() {
-		myInfo, ok := receipts["m.read"][c.config.UserID]
+		myInfo, ok := receipts[event.ReceiptTypeRead][c.config.UserID]
 		if !ok {
 			continue
 		}
@@ -916,20 +916,26 @@ func (c *ClientWrapper) parseReadReceipt(evt *event.Event) (largestTimestampEven
 
 		//********** OFFLINE COMMS LOGIC ***********//
 
-		ackUsers := receipts["m.read"] //get all users that saw the event with eventID
-		//compare them against room members
-		for _, user := range members {
-			if _, ok := ackUsers[user]; !ok {
-				offline.users = append(offline.users, user)
+		actualEvent, _ := c.GetEvent(room, eventID)
+		if actualEvent.Sender == c.client.UserID { //only send events that we sent
+			ackUsers := receipts["m.read"] //get all users that saw the event with eventID
+			//compare them against room members
+			for _, user := range members {
+				if _, ok := ackUsers[user]; !ok {
+					offline.users = append(offline.users, user)
+				}
 			}
+
+			//if at least one user did not send a receipt for this event
+			if len(offline.users) > 0 {
+				offline.eventID = eventID
+				offline.roomID = evt.RoomID
+				c.sendOff <- offline //send data to goroutine
+			}
+		} else {
+			continue
 		}
 
-		//if at least one user did not send a receipt for this event
-		if len(offline.users) > 0 {
-			offline.eventID = eventID
-			offline.roomID = evt.RoomID
-			c.sendOff <- offline //send data to goroutine
-		}
 	}
 	return
 }
@@ -1131,18 +1137,11 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 			}
 			evt.Type = event.EventEncrypted
 			evt.Content = event.Content{Parsed: encrypted}
-			byt, err := json.Marshal(evt)
-			if err != nil {
-				c.logger.Err(err).Msg("Could not marshal event bytes")
-			}
-			rw.Write(byt)
+			c.writeBytes(rw, evt)
 
-			//Wait for the other client's response here
-			evtBytes, _ := rw.ReadBytes('\n')
-
-			var keyReq *mxevents.Event
-			json.Unmarshal(evtBytes, keyReq)
-			originalContent, _ := evt.Content.Parsed.(*event.RoomKeyRequestEventContent)
+			//Wait for the other client's response here -> can be a key request or an ACK (TODO: add a clause for this)
+			keyReq := c.readBytes(rw)
+			originalContent, _ := keyReq.Content.Parsed.(*event.RoomKeyRequestEventContent)
 			forwardedRoomKey, _ := c.parseKeyRequestEvent(originalContent)
 
 			olmSesh, _ := c.crypto.CryptoStore.GetLatestSession(idKey)
@@ -1154,11 +1153,7 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 					Content: event.Content{Parsed: olmContent},
 				},
 			}
-			olmBytes, err := json.Marshal(olmEvent)
-			if err != nil {
-				c.logger.Err(err).Msg("Could not marshal olm event bytes")
-			}
-			rw.Write(olmBytes)
+			c.writeBytes(rw, olmEvent)
 
 		} //maybe add else clause here, even though it probably will never happen
 	}
