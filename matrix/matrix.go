@@ -1163,18 +1163,19 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 	hostDevice := c.exchangeCredentials(rw)
 	senderCredentials := map[id.UserID][]id.DeviceID{hostDevice.UserID: {hostDevice.DeviceID}}
 
-	var room *rooms.Room
 	var missingEvt *mxevents.Event
 	var evt *event.Event
 	var err error
 
 	missingEvt = c.readBytes(rw)
-	evt, err = c.crypto.DecryptMegolmEvent(context.TODO(), missingEvt.Event)
+	room := c.GetOrCreateRoom(missingEvt.RoomID)
 
 	if existing, _ := c.history.Get(room, evt.ID); existing != nil {
 		c.logger.Info().Msg("Event is already stored, probably was already sent by another host")
 		return
 	}
+
+	evt, err = c.crypto.DecryptMegolmEvent(context.TODO(), missingEvt.Event)
 
 	if err != nil {
 		c.logger.Err(err).Msg("Could not decrypt event received offline")
@@ -1201,7 +1202,6 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 		}
 	}
 
-	room = c.GetOrCreateRoom(evt.RoomID)
 	c.addMessageToHistory(room, evt)
 }
 
