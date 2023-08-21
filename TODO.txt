@@ -1,13 +1,12 @@
 -> Decidir se vale a pena manter uma copia do estado da room em memoria, ou se compensa ter menos custo de armazenamento
  e fazer mais calls à API DONE
 
--> Pensar em como fazer a CLI, i.e., como apresentar a informação
+-> Pensar em como fazer a CLI, i.e., como apresentar a informação DONE
 
 -> Encriptação DONE
 
--> Acrescentar funcionalidade da comunicação offline por proximidade
-
 -> Parametros de encriptação (numero de mensagens ou tempo ate a sessao ser substituida) configuravel?
 
-->
+-> 18/08 versão funcional (em teoria) da comunicação offline, com o caveat da tal dúvida sobre a sessão ficar 
+inconsistente por encriptar mais vezes que as outras
 

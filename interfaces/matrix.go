@@ -5,11 +5,13 @@ import (
 	"thesgo/matrix/rooms"
 
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/crypto"
 	"maunium.net/go/mautrix/id"
 )
 
 type MatrixContainer interface {
 	Client() *mautrix.Client
+	Crypto() *crypto.OlmMachine
 	//Preferences() *config.UserPreferences
 	InitClient(isStartup bool) error
 	Initialized() bool

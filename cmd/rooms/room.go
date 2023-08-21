@@ -19,8 +19,9 @@ const Server string = "https:/lpgains.duckdns.org" //const to avoid hardcoding s
 var RoomCmd = &cobra.Command{
 	Use:   "room",
 	Short: "Commands for every expected action regarding rooms.",
-	Long: `Commands for a user that is logged in to interact with his rooms, like inviting other users,
-creating a new room, leaving a room, and sending messages into a room (with encryption enabled by default).`,
+	Long: `Commands for a user that is logged in to interact with his rooms, such as inviting other users,
+creating a new room, leaving a room, sending messages into a room (with encryption enabled by default) and
+verifying other uses in the room.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("room called")
 	},
@@ -45,7 +46,6 @@ func init() {
 	// roomCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	RoomCmd.PersistentFlags().StringVarP(&RoomName, "room-name", "n", "", "Name of the room")
 	if err := RoomCmd.MarkPersistentFlagRequired("room-name"); err != nil {
-		fmt.Println("huh")
 		fmt.Println(err)
 	}
 
