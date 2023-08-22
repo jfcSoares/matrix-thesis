@@ -1092,6 +1092,7 @@ func (c *ClientWrapper) runOffline() {
 					fmt.Println("Connected to:", peer)
 					c.logger.Info().Msg("Connected to: " + peer.String())
 					go c.sendOffline(rw)
+
 				}
 
 				//stream.Close() //manter aberto
@@ -1113,6 +1114,7 @@ func (c *ClientWrapper) handleIncomingStream(s network.Stream) {
 	go c.readData(rw)
 
 	// stream 's' will stay open until you close it (or the other side closes it).
+	//missing waitgroup to wait for readData thread
 }
 
 func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {

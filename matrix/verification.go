@@ -1,7 +1,11 @@
 package matrix
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"maunium.net/go/mautrix/crypto"
@@ -53,6 +57,8 @@ func (vc *VerificationContainer) VerifySASMatch(otherDevice *id.Device, data cry
 	vc.emojiText.Data = data
 
 	//Print emoji to console, wait for user input (Yes/No)
+	vc.emojiText.Draw()
+	go vc.awaitConfirm()
 
 	confirm := <-vc.confirmChan
 	vc.emojiText.Data = nil
@@ -80,6 +86,19 @@ func (vc *VerificationContainer) OnSuccess() {
 	vc.done = true
 }
 
+func (vc *VerificationContainer) awaitConfirm() {
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	line = strings.Replace(line, "\n", "", -1)
+	//for windows: line = strings.Replace(line, "\r\n", "", -1)
+	if strings.Compare(line, "yes") == 0 {
+		//send signal to parent thread
+		vc.confirmChan <- true
+	} else {
+		vc.confirmChan <- false
+	}
+}
+
 type EmojiView struct {
 	Data crypto.SASData
 }
@@ -91,8 +110,19 @@ func (e *EmojiView) Draw() {
 
 	switch e.Data.Type() {
 	case event.SASEmoji:
+		for _, emoji := range e.Data.(crypto.EmojiSASData) {
+			fmt.Print(emoji.Emoji)
 
+		}
+		fmt.Println() //Hacky way to have the description of each emoji below the respective emoji
+		for _, emoji := range e.Data.(crypto.EmojiSASData) {
+			fmt.Print(emoji.Description)
+
+		}
 	case event.SASDecimal:
-
+		for _, number := range e.Data.(crypto.DecimalSASData) {
+			fmt.Print(strconv.FormatUint(uint64(number), 10))
+		}
 	}
+
 }
