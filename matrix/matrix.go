@@ -10,6 +10,7 @@ import (
 	"runtime"
 	dbg "runtime/debug"
 	"strconv"
+	"sync"
 	"time"
 
 	"thesgo/config"
@@ -1106,15 +1107,25 @@ func (c *ClientWrapper) runOffline() {
 
 func (c *ClientWrapper) handleIncomingStream(s network.Stream) {
 	c.logger.Info().Msg("Got a new stream!")
-
 	// Create a buffer stream for non blocking read and write.
 	rw := bufio.NewReadWriter(bufio.NewReader(s), bufio.NewWriter(s))
 
+	var wg sync.WaitGroup
+	wg.Add(1)
+
 	//if stream is incoming, it means we are offline, therefore only need to do the receiving end of the logic
-	go c.readData(rw)
+	go func() {
+		//Wrap the worker call in a closure that makes sure to tell the WaitGroup that this worker is done.
+		//This way the worker itself does not have to be aware of the concurrency primitives involved in its execution.
+		defer wg.Done()
+		c.readData(rw)
+	}()
+
+	//go c.readData(rw)
 
 	// stream 's' will stay open until you close it (or the other side closes it).
-	//missing waitgroup to wait for readData thread
+	wg.Wait() //wait for the readData subroutine to finish
+	s.Close()
 }
 
 func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
