@@ -10,3 +10,10 @@
 -> 18/08 versão funcional (em teoria) da comunicação offline, com o caveat da tal dúvida sobre a sessão ficar 
 inconsistente por encriptar mais vezes que as outras
 
+-> Branch safeStore TODO:
+    -> alterar handleMessage para guardar os eventos ainda encriptados = DONE
+    -> ver history.go a ver se há alteraçoes a fazer por os eventos serem agr encriptados = DONE
+    -> ver getEvent   "" "" "" ""   "" "" DONE
+    -> ver logica para comms offline agr que nao é necessário re-encriptar o evento DONE
+    -> tentar pensar em mais situações que esta mudança possa afetar
+

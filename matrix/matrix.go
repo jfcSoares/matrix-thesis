@@ -10,6 +10,7 @@ import (
 	"runtime"
 	dbg "runtime/debug"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -795,6 +796,7 @@ func (c *ClientWrapper) HandleRoomEncryption(source mautrix.EventSource, mxEvent
 }
 
 func (c *ClientWrapper) HandleEncrypted(source mautrix.EventSource, mxEvent *event.Event) {
+	//decrypt to perform safety and to check if it is a device verification
 	evt, err := c.crypto.DecryptMegolmEvent(context.TODO(), mxEvent)
 	if err != nil {
 		c.logger.Error().Err(err).Msg("failed to decrypt event contents")
@@ -816,7 +818,8 @@ func (c *ClientWrapper) HandleEncrypted(source mautrix.EventSource, mxEvent *eve
 			c.logger.Info().Msg("[Crypto/Debug] Processed in-room verification event " + evt.ID.String() + " of type " + evt.Type.String())
 		}
 	} else {
-		c.HandleMessage(source, evt)
+		//c.HandleMessage(source, evt)
+		c.HandleMessage(source, mxEvent) //Store the event still encrypted
 	}
 }
 
@@ -998,8 +1001,8 @@ const protocolID = "/matrix-offline/1.0.0"
 // struct to hold data to send to clients outside of matrix if needed
 type offlineData struct {
 	eventID id.EventID  //the event to send
-	roomID  id.RoomID   //the room to whom the event belongs to
-	users   []id.UserID //the users that did not receive the event
+	roomID  id.RoomID   //the room to which the event pertains to
+	users   []id.UserID //the users that did not send out a receipt for this event
 }
 
 func newHost() host.Host {
@@ -1096,7 +1099,7 @@ func (c *ClientWrapper) runOffline() {
 
 				}
 
-				//stream.Close() //manter aberto
+				//stream.Close() //keep open, the receiving side will close it
 			}
 		default:
 			c.logger.Info().Msg("Listening for connections in case we are offline")
@@ -1131,7 +1134,7 @@ func (c *ClientWrapper) handleIncomingStream(s network.Stream) {
 func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 	toSend := <-c.sendOff
 	room := c.GetRoom(toSend.roomID)
-	evt, _ := c.GetEvent(room, toSend.eventID)
+	evt, _ := c.GetEvent(room, toSend.eventID) //get the encrypted copy of this event
 
 	offlineHost := c.exchangeCredentials(rw)
 
@@ -1144,16 +1147,19 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 		//If there is an established Olm session with the identity key of the offline client, first assume a Megolm session has also been shared with the
 		//offline device previously and send the encrypted event as normal. In case the offline client cannot decrypt it, then share the megolm session a posteriori.
 		if b := c.crypto.CryptoStore.HasSession(idKey); b {
-			encrypted, err := c.crypto.EncryptMegolmEvent(context.TODO(), evt.RoomID, evt.Type, &evt.Content)
+			/*encrypted, err := c.crypto.EncryptMegolmEvent(context.TODO(), evt.RoomID, evt.Type, &evt.Content)
 			if err != nil {
 				c.logger.Error().Err(err).Msg("Could not encrypt the specified event")
 			}
 			evt.Type = event.EventEncrypted
-			evt.Content = event.Content{Parsed: encrypted}
+			evt.Content = event.Content{Parsed: encrypted}*/
 			c.writeBytes(rw, evt)
 
 			//Wait for the other client's response here -> can be a key request or an ACK (TODO: add a clause for this)
 			keyReq := c.readBytes(rw)
+			if keyReq == nil { //An ACK was received
+				return
+			}
 			originalContent, _ := keyReq.Content.Parsed.(*event.RoomKeyRequestEventContent)
 			forwardedRoomKey, _ := c.parseKeyRequestEvent(originalContent)
 
@@ -1168,7 +1174,7 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 			}
 			c.writeBytes(rw, olmEvent)
 
-		} //maybe add else clause here, even though it probably will never happen
+		} //no else clause here, we assume there already was a valid Olm session established before the device went offline
 	}
 }
 
@@ -1216,6 +1222,7 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 	}
 
 	c.addMessageToHistory(room, evt)
+	rw.Write([]byte("ACK"))
 }
 
 func (c *ClientWrapper) exchangeCredentials(rw *bufio.ReadWriter) *id.Device {
@@ -1260,6 +1267,13 @@ func (c *ClientWrapper) readBytes(rw *bufio.ReadWriter) *mxevents.Event {
 	if err != nil {
 		// if it reaches this, need to find the correct delim
 		c.logger.Error().Msg("Failed to read bytes from stream")
+	}
+
+	//Clause exclusively for the case where the event was succesfully decrypted at first try by the offline client
+	//and an ACK was sent to the sending client
+	possAck := string(evtBytes)
+	if strings.Compare(possAck, "ACK") == 0 { //this means
+		return nil
 	}
 
 	var evt *mxevents.Event
