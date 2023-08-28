@@ -590,6 +590,18 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 	if len(events) > 0 {
 		fmt.Printf("Loaded %d events for %s from local cache", len(events), room.ID)
 		c.logger.Info().Msg("Loaded " + strconv.Itoa(len(events)) + "from local cache of room with ID: " + room.ID.String())
+		for _, evt := range events {
+			err := evt.Content.ParseRaw(evt.Type)
+			if err != nil {
+				fmt.Printf("Failed to unmarshal content of event %s (type %s) by %s in %s: %v\n%s", evt.ID, evt.Type.Repr(), evt.Sender, evt.RoomID, err, string(evt.Content.VeryRaw))
+				c.logger.Err(err).Msg("Failed to unmarshal content of event " + evt.ID.String() + " (type " + evt.Type.Repr() + ") by " + string(evt.Sender) + " in " + string(evt.RoomID) + " with content:" + string(evt.Content.VeryRaw))
+			}
+
+			decrypted := c.decryptMegolm(evt.Event)
+			if decrypted != nil {
+				evt.Event = decrypted
+			}
+		}
 		return events, newDBPointer, nil
 	}
 
@@ -607,26 +619,9 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 			c.logger.Err(err).Msg("Failed to unmarshal content of event " + evt.ID.String() + " (type " + evt.Type.Repr() + ") by " + string(evt.Sender) + " in " + string(evt.RoomID) + " with content:" + string(evt.Content.VeryRaw))
 		}
 
-		if evt.Type == event.EventEncrypted {
-			if c.crypto == nil {
-				evt.Type = mxevents.EventEncryptionUnsupported
-				origContent, _ := evt.Content.Parsed.(*event.EncryptedEventContent)
-				evt.Content.Parsed = mxevents.EncryptionUnsupportedContent{Original: origContent}
-			} else {
-				decrypted, err := c.crypto.DecryptMegolmEvent(context.TODO(), evt)
-				if err != nil {
-					fmt.Printf("Failed to decrypt event %s: %v", evt.ID, err)
-					c.logger.Err(err).Msg("Failed to decrypt event " + evt.ID.String())
-					evt.Type = mxevents.EventBadEncrypted
-					origContent, _ := evt.Content.Parsed.(*event.EncryptedEventContent)
-					evt.Content.Parsed = &mxevents.BadEncryptedContent{
-						Original: origContent,
-						Reason:   err.Error(),
-					}
-				} else {
-					resp.Chunk[i] = decrypted
-				}
-			}
+		decrypted := c.decryptMegolm(evt)
+		if decrypted != nil {
+			resp.Chunk[i] = decrypted
 		}
 	}
 
@@ -645,6 +640,31 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 		return nil, dbPointer, err
 	}
 	return events, dbPointer, nil
+}
+
+func (c *ClientWrapper) decryptMegolm(evt *event.Event) *event.Event {
+	if evt.Type == event.EventEncrypted {
+		if c.crypto == nil {
+			evt.Type = mxevents.EventEncryptionUnsupported
+			origContent, _ := evt.Content.Parsed.(*event.EncryptedEventContent)
+			evt.Content.Parsed = mxevents.EncryptionUnsupportedContent{Original: origContent}
+		} else {
+			decrypted, err := c.crypto.DecryptMegolmEvent(context.TODO(), evt)
+			if err != nil {
+				fmt.Printf("Failed to decrypt event %s: %v", evt.ID, err)
+				c.logger.Err(err).Msg("Failed to decrypt event " + evt.ID.String())
+				evt.Type = mxevents.EventBadEncrypted
+				origContent, _ := evt.Content.Parsed.(*event.EncryptedEventContent)
+				evt.Content.Parsed = &mxevents.BadEncryptedContent{
+					Original: origContent,
+					Reason:   err.Error(),
+				}
+				return nil
+			}
+			return decrypted
+		}
+	}
+	return nil
 }
 
 // Fetches a specific event of the given room
@@ -1270,7 +1290,7 @@ func (c *ClientWrapper) readBytes(rw *bufio.ReadWriter) *mxevents.Event {
 	}
 
 	//Clause exclusively for the case where the event was succesfully decrypted at first try by the offline client
-	//and an ACK was sent to the sending client
+	//and an ACK was sent to the online client
 	possAck := string(evtBytes)
 	if strings.Compare(possAck, "ACK") == 0 { //this means
 		return nil
