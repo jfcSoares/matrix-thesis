@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
 
@@ -19,7 +20,9 @@ var historyCmd = &cobra.Command{
 		room := Backend.Matrix().GetRoom(id.RoomID(RoomName))
 		hist, _, _ := Backend.Matrix().GetHistory(room, 50, 0)
 		for _, evt := range hist {
-			fmt.Println(evt.Content.AsMessage().Body)
+			if evt.Type == event.EventMessage { //only show the user messages, not the internal matrix messages
+				fmt.Println(evt.Content.AsMessage().Body)
+			}
 		}
 	},
 }

@@ -295,7 +295,7 @@ func (c *ClientWrapper) Start() {
 					c.logger.Error().Msg("Sync() call errored with: " + err.Error())
 				}
 			} else {
-				fmt.Print("Sync() returned without error")
+				//fmt.Print("Sync() returned without error")
 				c.logger.Info().Msg("Sync() call returned successfully")
 				//c.Logout() //ONLY FOR TESTING
 			}
@@ -598,7 +598,8 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 		return nil, dbPointer, err
 	}
 
-	fmt.Printf("Loaded %d events for %s from server from %s to %s", len(resp.Chunk), room.ID, resp.Start, resp.End)
+	fmt.Printf("Loaded %d events for %s from server", len(resp.Chunk), room.ID.String())
+	c.logger.Info().Msg("Loaded " + string(rune(len(resp.Chunk))) + " events for " + room.ID.String() + " from server from " + resp.Start + " to " + resp.End)
 	for i, evt := range resp.Chunk {
 		err := evt.Content.ParseRaw(evt.Type)
 		if err != nil {
@@ -1124,7 +1125,7 @@ func (c *ClientWrapper) handleIncomingStream(s network.Stream) {
 	//go c.readData(rw)
 
 	// stream 's' will stay open until you close it (or the other side closes it).
-	wg.Wait() //wait for the readData subroutine to finish
+	wg.Wait() //wait for the readData subroutine to finish and close stream
 	s.Close()
 }
 
