@@ -295,9 +295,7 @@ func (c *ClientWrapper) Start() {
 					c.logger.Error().Msg("Sync() call errored with: " + err.Error())
 				}
 			} else {
-				//fmt.Print("Sync() returned without error")
 				c.logger.Info().Msg("Sync() call returned successfully")
-				//c.Logout() //ONLY FOR TESTING
 			}
 		}
 	}
