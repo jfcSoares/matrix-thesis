@@ -263,7 +263,7 @@ func (c *ClientWrapper) Logout() {
 	c.logger.Info().Msg("Logging out...")
 	c.client.Logout()
 	c.Stop()
-	c.config.DeleteSession()
+	c.config.DeleteSession() //maybe turn this into an option? through a boolean parameter
 	c.client.ClearCredentials()
 	c.client = nil
 	c.crypto = nil
