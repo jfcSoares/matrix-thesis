@@ -75,8 +75,6 @@ func NewWrapper(conf *config.Config) *ClientWrapper {
 		running:      false,
 		disconnected: false,
 	}
-
-	c.initLogger()
 	return c
 }
 
