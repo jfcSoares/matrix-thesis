@@ -3,11 +3,11 @@
 package matrix
 
 import (
-	"fmt"
 	"sync"
 	"thesgo/matrix/rooms"
 	"time"
 
+	"maunium.net/go/gomuks/debug"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -38,7 +38,7 @@ func (s *ThesgoSyncer) ProcessResponse(res *mautrix.RespSync, since string) (err
 	if since == "" {
 		s.rooms.DisableUnloading()
 	}
-	fmt.Print("Received sync response")
+	debug.Print("Received sync response")
 	//s.Progress.SetMessage("Processing sync response")
 	steps := len(res.Rooms.Join) + len(res.Rooms.Invite) + len(res.Rooms.Leave)
 	//s.Progress.SetSteps(steps + 2 + len(s.globalListeners))
@@ -95,6 +95,7 @@ func (s *ThesgoSyncer) notifyGlobalListeners(res *mautrix.RespSync, since string
 }
 
 func (s *ThesgoSyncer) processJoinedRoom(roomID id.RoomID, roomData mautrix.SyncJoinedRoom, callback func()) {
+	defer debug.Recover()
 	room := s.rooms.GetOrCreate(roomID)
 	room.UpdateSummary(roomData.Summary)
 	s.processSyncEvents(room, roomData.State.Events, mautrix.EventSourceJoin|mautrix.EventSourceState)
@@ -110,6 +111,7 @@ func (s *ThesgoSyncer) processJoinedRoom(roomID id.RoomID, roomData mautrix.Sync
 }
 
 func (s *ThesgoSyncer) processInvitedRoom(roomID id.RoomID, roomData mautrix.SyncInvitedRoom, callback func()) {
+	defer debug.Recover()
 	room := s.rooms.GetOrCreate(roomID)
 	room.UpdateSummary(roomData.Summary)
 	s.processSyncEvents(room, roomData.State.Events, mautrix.EventSourceInvite|mautrix.EventSourceState)
@@ -117,6 +119,7 @@ func (s *ThesgoSyncer) processInvitedRoom(roomID id.RoomID, roomData mautrix.Syn
 }
 
 func (s *ThesgoSyncer) processLeftRoom(roomID id.RoomID, roomData mautrix.SyncLeftRoom, callback func()) {
+	defer debug.Recover()
 	room := s.rooms.GetOrCreate(roomID)
 	room.HasLeft = true
 	room.UpdateSummary(roomData.Summary)
@@ -157,7 +160,7 @@ func (s *ThesgoSyncer) processSyncEvent(room *rooms.Room, evt *event.Event, sour
 
 	err := evt.Content.ParseRaw(evt.Type)
 	if err != nil {
-		fmt.Printf("Failed to unmarshal content of event %s (type %s) by %s in %s: %v\n%s", evt.ID, evt.Type.Repr(), evt.Sender, evt.RoomID, err, string(evt.Content.VeryRaw))
+		debug.Printf("Failed to unmarshal content of event %s (type %s) by %s in %s: %v\n%s", evt.ID, evt.Type.Repr(), evt.Sender, evt.RoomID, err, string(evt.Content.VeryRaw))
 		// TODO might be good to let these pass to allow handling invalid events too
 		return
 	}
@@ -194,7 +197,7 @@ func (s *ThesgoSyncer) notifyListeners(source mautrix.EventSource, evt *event.Ev
 
 // OnFailedSync always returns a 10 second wait period between failed /syncs, never a fatal error.
 func (s *ThesgoSyncer) OnFailedSync(res *mautrix.RespSync, err error) (time.Duration, error) {
-	fmt.Printf("Sync failed: %v", err)
+	debug.Printf("Sync failed: %v", err)
 	return 10 * time.Second, nil
 }
 

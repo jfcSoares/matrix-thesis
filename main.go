@@ -11,7 +11,9 @@ import (
 	"runtime"
 
 	"thesgo/cmd"
-	"thesgo/debug"
+	deb "thesgo/debug" //matrix client logger
+
+	debug "maunium.net/go/gomuks/debug" //general application logger
 )
 
 func main() {
@@ -19,7 +21,14 @@ func main() {
 	debugDir := os.Getenv("DEBUG_DIR")
 	if len(debugDir) > 0 {
 		debug.LogDirectory = debugDir
+		deb.LogDirectory = debugDir
 	}
+
+	debug.DeadlockDetection = true
+	debug.WriteLogs = true
+	debug.RecoverPrettyPanic = false
+	debug.Initialize() //Initialize general app logger
+	defer debug.Recover()
 
 	var configDir, dataDir, cacheDir string
 	var err error
@@ -40,62 +49,15 @@ func main() {
 		os.Exit(3)
 	}
 
-	fmt.Println("Config directory:", configDir)
-	fmt.Println("Data directory:", dataDir)
-	fmt.Println("Cache directory:", cacheDir)
+	debug.Print("Config directory:", configDir)
+	debug.Print("Data directory:", dataDir)
+	debug.Print("Cache directory:", cacheDir)
 
 	thesgo := NewThesgo(configDir, dataDir, cacheDir)
 	thesgo.Start()
 	cmd.SetLinkToBackend(thesgo) //link cli to rest of the client code
 	defer cmd.Execute()          //run the interface after initial setup has finished
 
-	/*c := thesgo.Matrix()
-	c.Login("test1", "Test1!´´´")
-
-	rooms, _ := c.RoomsJoined()
-	fmt.Println(event.StateEncryption)
-
-	stateKey := ""
-	evt := mxevents.Wrap(&event.Event{
-		Type:     event.StateEncryption,
-		RoomID:   rooms[0],
-		StateKey: &stateKey,
-		Content: event.Content{Parsed: &event.EncryptionEventContent{
-			Algorithm:              id.AlgorithmMegolmV1,
-			RotationPeriodMillis:   604800000, //for now use default session rotation
-			RotationPeriodMessages: 100,
-		}},
-	})
-
-	c.SendStateEvent(evt)
-
-	/*c := matrix.NewWrapper()
-	c.InitClient(false)
-
-	/*content := &event.MessageEventContent{
-		MsgType: event.MsgText,
-		Body:    "Hello World!",
-	}
-
-	evt := mxevents.Wrap(&event.Event{
-		ID:       id.EventID(c.Client().TxnID()),
-		Sender:   c.Client().UserID,
-		Type:     event.EventMessage,
-		RoomID:   rooms[0],
-		Content:  event.Content{Parsed: content},
-		Unsigned: event.Unsigned{TransactionID: c.Client().TxnID()},
-	})
-
-	c.SendEvent(evt)
-	//c.Start()
-
-	//<-c.IsStopped()
-	c.Logout()*/
-
-	// We use os.Exit() everywhere, so exiting by returning from Start() shouldn't happen.
-	/*time.Sleep(5 * time.Second)
-	fmt.Println("Unexpected exit by return from thesgo.Start().")
-	os.Exit(2)*/
 }
 
 func getRootDir(subdir string) string {

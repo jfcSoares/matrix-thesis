@@ -14,6 +14,7 @@ import (
 
 	sync "github.com/sasha-s/go-deadlock"
 
+	"maunium.net/go/gomuks/debug"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -134,9 +135,9 @@ type Room struct {
 	touch int64
 }
 
-func fmtPrintError(fn func() error, message string) {
+func debugPrintError(fn func() error, message string) {
 	if err := fn(); err != nil {
-		fmt.Printf("%s: %v", message, err)
+		debug.Printf("%s: %v", message, err)
 	}
 }
 
@@ -164,27 +165,27 @@ func (room *Room) load() {
 	if room.Loaded() {
 		return
 	}
-	fmt.Print("Loading state for room", room.ID, "from disk")
+	debug.Print("Loading state for room", room.ID, "from disk")
 	room.state = make(map[event.Type]map[string]*event.Event)
 	file, err := os.OpenFile(room.path, os.O_RDONLY, 0600)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			fmt.Print("Failed to open room state file for reading:", err)
+			debug.Print("Failed to open room state file for reading:", err)
 		} else {
-			fmt.Print("Room state file for", room.ID, "does not exist")
+			debug.Print("Room state file for", room.ID, "does not exist")
 		}
 		return
 	}
-	defer fmtPrintError(file.Close, "Failed to close room state file after reading")
+	defer debugPrintError(file.Close, "Failed to close room state file after reading")
 	cmpReader, err := gzip.NewReader(file)
 	if err != nil {
-		fmt.Print("Failed to open room state gzip reader:", err)
+		debug.Print("Failed to open room state gzip reader:", err)
 		return
 	}
-	defer fmtPrintError(cmpReader.Close, "Failed to close room state gzip reader")
+	defer debugPrintError(cmpReader.Close, "Failed to close room state gzip reader")
 	dec := gob.NewDecoder(cmpReader)
 	if err = dec.Decode(&room.state); err != nil {
-		fmt.Print("Failed to decode room state:", err)
+		debug.Print("Failed to decode room state:", err)
 	}
 	room.changed = false
 }
@@ -197,7 +198,7 @@ func (room *Room) Unload() bool {
 	if room.preUnload != nil && !room.preUnload() {
 		return false
 	}
-	fmt.Print("Unloading", room.ID)
+	debug.Print("Unloading", room.ID)
 	room.Save()
 	room.state = nil
 	room.memberCache = nil
@@ -228,27 +229,27 @@ func (room *Room) SetPostLoad(fn func()) {
 
 func (room *Room) Save() {
 	if !room.Loaded() {
-		fmt.Print("Failed to save room", room.ID, "state: room not loaded")
+		debug.Print("Failed to save room", room.ID, "state: room not loaded")
 		return
 	}
 	if !room.changed {
-		fmt.Print("Not saving", room.ID, "as state hasn't changed")
+		debug.Print("Not saving", room.ID, "as state hasn't changed")
 		return
 	}
-	fmt.Print("Saving state for room", room.ID, "to disk")
+	debug.Print("Saving state for room", room.ID, "to disk")
 	file, err := os.OpenFile(room.path, os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
-		fmt.Print("Failed to open room state file for writing:", err)
+		debug.Print("Failed to open room state file for writing:", err)
 		return
 	}
-	defer fmtPrintError(file.Close, "Failed to close room state file after writing")
+	defer debugPrintError(file.Close, "Failed to close room state file after writing")
 	cmpWriter := gzip.NewWriter(file)
-	defer fmtPrintError(cmpWriter.Close, "Failed to close room state gzip writer")
+	defer debugPrintError(cmpWriter.Close, "Failed to close room state gzip writer")
 	enc := gob.NewEncoder(cmpWriter)
 	room.lock.RLock()
 	defer room.lock.RUnlock()
 	if err := enc.Encode(&room.state); err != nil {
-		fmt.Print("Failed to encode room state:", err)
+		debug.Print("Failed to encode room state:", err)
 	}
 }
 
@@ -405,7 +406,7 @@ func (room *Room) UpdateState(evt *event.Event) {
 	}
 
 	if evt.Type != event.StateMember {
-		fmt.Printf("Updating state %s#%s for %s", evt.Type.String(), evt.GetStateKey(), room.ID)
+		debug.Printf("Updating state %s#%s for %s", evt.Type.String(), evt.GetStateKey(), room.ID)
 	}
 
 	room.state[evt.Type][*evt.StateKey] = evt
@@ -413,7 +414,7 @@ func (room *Room) UpdateState(evt *event.Event) {
 
 func (room *Room) updateMemberState(userID, sender id.UserID, content *event.MemberEventContent) {
 	if userID == room.SessionUserID {
-		fmt.Print("Updating session user state:", content)
+		debug.Print("Updating session user state:", content)
 		room.SessionMember = room.eventToMember(userID, sender, content)
 	}
 	if room.memberCache != nil {

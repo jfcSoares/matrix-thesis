@@ -14,6 +14,8 @@ import (
 	ifc "thesgo/interfaces"
 	"thesgo/matrix"
 	"time"
+
+	"maunium.net/go/gomuks/debug"
 )
 
 type Thesgo struct {
@@ -48,6 +50,7 @@ func (thgo *Thesgo) Save() {
 // StartAutosave calls Save() every minute until it receives a stop signal
 // on the Thesgo.stop channel.
 func (thgo *Thesgo) StartAutosave() {
+	defer debug.OnRecover()
 	ticker := time.NewTicker(time.Minute)
 	for {
 		select {
@@ -70,15 +73,13 @@ func (thgo *Thesgo) Stop(save bool) {
 }
 
 func (thgo *Thesgo) internalStop(save bool) {
-	fmt.Print("Disconnecting from Matrix...")
+	debug.Print("Disconnecting from Matrix...")
 	thgo.matrix.Stop()
-	fmt.Print("Cleaning up UI...")
-	//thgo.ui.Stop()
 	thgo.stop <- true
 	if save {
 		thgo.Save()
 	}
-	fmt.Print("Exiting process")
+	debug.Print("Exiting process")
 	os.Exit(0)
 }
 
