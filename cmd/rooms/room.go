@@ -22,6 +22,7 @@ var RoomCmd = &cobra.Command{
 	Long: `Commands for a user that is logged in to interact with his rooms, such as inviting other users,
 creating a new room, leaving a room, sending messages into a room (with encryption enabled by default) and
 verifying other uses in the room.`,
+	Example: "thesgo room -n 'room-name' command",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("room called")
 	},
@@ -44,7 +45,7 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// roomCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	RoomCmd.PersistentFlags().StringVarP(&RoomName, "room-name", "n", "", "Name of the room")
+	RoomCmd.PersistentFlags().StringVarP(&RoomName, "room-name", "n", "", "Complete name of the room, with format '!room-name:server-name'")
 	if err := RoomCmd.MarkPersistentFlagRequired("room-name"); err != nil {
 		fmt.Println(err)
 	}

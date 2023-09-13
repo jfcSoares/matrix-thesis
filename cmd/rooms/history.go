@@ -14,7 +14,7 @@ import (
 // historyCmd represents the history command
 var historyCmd = &cobra.Command{
 	Use:   "history",
-	Short: "Lists the most recent events in a room.",
+	Short: "Lists the 50 most recent messages in a room.",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
 		room := Backend.Matrix().GetRoom(id.RoomID(RoomName))

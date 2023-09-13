@@ -10,6 +10,7 @@ import (
 	"runtime"
 	dbg "runtime/debug"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -260,6 +261,7 @@ func (c *ClientWrapper) concludeLogin(resp *mautrix.RespLogin) {
 }
 
 func (c *ClientWrapper) Logout() {
+	fmt.Println("Logging out...")
 	c.logger.Info().Msg("Logging out...")
 	c.client.Logout()
 	c.Stop()
@@ -306,14 +308,12 @@ func (c *ClientWrapper) Start() {
 // Stop stops the Matrix syncer.
 func (c *ClientWrapper) Stop() {
 	if c.running {
-		fmt.Print("Stopping Matrix client...")
 		c.logger.Info().Msg("Stopping Matrix client...")
 		select {
 		case c.stop <- true:
 		default:
 		}
 		c.client.StopSync()
-		fmt.Print("Closing history manager...")
 		err := c.history.Close()
 		if err != nil {
 			c.logger.Err(err).Msg("Error closing history manager")
@@ -587,7 +587,7 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 	}
 
 	if len(events) > 0 {
-		fmt.Printf("Loaded %d events for %s from local cache", len(events), room.ID)
+		//fmt.Printf("Loaded %d events for %s from local cache", len(events), room.ID)
 		c.logger.Info().Msg("Loaded " + strconv.Itoa(len(events)) + "from local cache of room with ID: " + room.ID.String())
 		return events, newDBPointer, nil
 	}
@@ -598,7 +598,7 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 		return nil, dbPointer, err
 	}
 
-	fmt.Printf("Loaded %d events for %s from server", len(resp.Chunk), room.ID.String())
+	//fmt.Printf("Loaded %d events for %s from server", len(resp.Chunk), room.ID.String())
 	c.logger.Info().Msg("Loaded " + string(rune(len(resp.Chunk))) + " events for " + room.ID.String() + " from server from " + resp.Start + " to " + resp.End)
 	for i, evt := range resp.Chunk {
 		err := evt.Content.ParseRaw(evt.Type)
@@ -746,7 +746,6 @@ func (c *ClientWrapper) SendReadReceipt(evt *mxevents.Event) error {
 	err := c.client.SendReceipt(evt.RoomID, evt.ID, event.ReceiptTypeRead, nil)
 
 	if err != nil {
-		fmt.Println(err)
 		c.logger.Error().Err(err).Msg("could not send read receipt")
 		return err
 	}
@@ -853,7 +852,8 @@ func (c *ClientWrapper) processOwnMembershipChange(evt *event.Event) {
 	if evt.Unsigned.PrevContent != nil {
 		prevMembership = evt.Unsigned.PrevContent.AsMember().Membership
 	}
-	fmt.Printf("Processing own membership change: %s->%s in %s", prevMembership, membership, evt.RoomID)
+
+	c.logger.Info().Msg("Processing own membership change: " + string(prevMembership) + "->" + string(membership) + " in " + evt.RoomID.String())
 	if membership == prevMembership {
 		return
 	}
@@ -1153,8 +1153,12 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 			evt.Content = event.Content{Parsed: encrypted}
 			c.writeBytes(rw, evt)
 
-			//Wait for the other client's response here -> can be a key request or an ACK (TODO: add a clause for this)
-			keyReq := c.readBytes(rw)
+			//Wait for the other client's response here -> can be a key request or an ACK
+			keyReq, ack := c.readBytes(rw)
+			if ack != "" { //An ACK was received
+				return
+			}
+
 			originalContent, _ := keyReq.Content.Parsed.(*event.RoomKeyRequestEventContent)
 			forwardedRoomKey, _ := c.parseKeyRequestEvent(originalContent)
 
@@ -1181,7 +1185,7 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 	var evt *event.Event
 	var err error
 
-	missingEvt = c.readBytes(rw)
+	missingEvt, _ = c.readBytes(rw)
 	room := c.GetOrCreateRoom(missingEvt.RoomID)
 
 	if existing, _ := c.history.Get(room, evt.ID); existing != nil {
@@ -1199,7 +1203,7 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 		c.writeBytes(rw, keyReq)
 
 		//Receive encrypted megolm session
-		encrypted := c.readBytes(rw)
+		encrypted, _ := c.readBytes(rw)
 
 		//Decrypt the event with Olm
 		decryptedEvt, err := c.decryptOlm(context.Background(), encrypted.Event)
@@ -1217,6 +1221,7 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 	}
 
 	c.addMessageToHistory(room, evt)
+	rw.Write([]byte("ACK"))
 }
 
 func (c *ClientWrapper) exchangeCredentials(rw *bufio.ReadWriter) *id.Device {
@@ -1255,16 +1260,23 @@ func (c *ClientWrapper) writeBytes(rw *bufio.ReadWriter, evt *mxevents.Event) {
 	}
 }
 
-func (c *ClientWrapper) readBytes(rw *bufio.ReadWriter) *mxevents.Event {
+func (c *ClientWrapper) readBytes(rw *bufio.ReadWriter) (evt *mxevents.Event, ack string) {
 	//Next, it will receive the encrypted event
 	evtBytes, err := rw.ReadBytes('\n')
 	if err != nil {
 		// if it reaches this, need to find the correct delim
 		c.logger.Error().Msg("Failed to read bytes from stream")
+		return nil, ""
 	}
 
-	var evt *mxevents.Event
+	//Clause exclusively for the case where the event was succesfully decrypted at first try by the offline client
+	//and an ACK was sent to the online client
+	ack = string(evtBytes)
+	if strings.Compare(ack, "ACK") == 0 {
+		return nil, ack
+	}
+
 	json.Unmarshal(evtBytes, evt)
 
-	return evt
+	return evt, ""
 }
