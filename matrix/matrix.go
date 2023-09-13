@@ -265,7 +265,7 @@ func (c *ClientWrapper) Logout() {
 	c.logger.Info().Msg("Logging out...")
 	c.client.Logout()
 	c.Stop()
-	c.config.DeleteSession()
+	c.config.DeleteSession() //maybe turn this into an option? through a boolean parameter
 	c.client.ClearCredentials()
 	c.client = nil
 	c.crypto = nil
@@ -297,9 +297,7 @@ func (c *ClientWrapper) Start() {
 					c.logger.Error().Msg("Sync() call errored with: " + err.Error())
 				}
 			} else {
-				//fmt.Print("Sync() returned without error")
 				c.logger.Info().Msg("Sync() call returned successfully")
-				//c.Logout() //ONLY FOR TESTING
 			}
 		}
 	}
