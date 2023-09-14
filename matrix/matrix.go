@@ -339,8 +339,6 @@ func (c *ClientWrapper) OnLogin() {
 	if c.crypto != nil {
 		c.syncer.OnSync(c.crypto.ProcessSyncResponse)
 		c.syncer.OnEventType(event.StateMember, func(source mautrix.EventSource, evt *event.Event) {
-			// Don't spam the crypto module with member events of an initial sync
-			// TODO invalidate all group sessions when clearing cache?
 			if c.config.AuthCache.InitialSyncDone {
 				c.crypto.HandleMemberEvent(source, evt)
 			}
