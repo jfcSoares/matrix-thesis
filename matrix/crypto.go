@@ -33,17 +33,6 @@ func (c *ClientWrapper) initCrypto() error {
 		return fmt.Errorf("failed to upgrade crypto state store: %w", err)
 	}
 
-	//this flow is if we do not use the gomuks/config package
-	/*if c.client.Store == nil {
-		c.client.Store = cryptoStore
-	} else if _, isMemory := c.client.Store.(*mautrix.MemorySyncStore); isMemory {
-		c.client.Store = cryptoStore
-	}
-	err = cryptoStore.DB.Upgrade()
-	if err != nil {
-		return fmt.Errorf("failed to upgrade crypto state store: %w", err)
-	}*/
-
 	crypt := crypto.NewOlmMachine(c.client, &log, cryptoStore, c.config.Rooms)
 	//crypt.AcceptVerificationFrom -> pode ser necessario dar override?
 	c.crypto = crypt
