@@ -720,7 +720,6 @@ func (c *ClientWrapper) SendEvent(evt *mxevents.Event) (id.EventID, error) {
 
 // Sends a state event into a room
 func (c *ClientWrapper) SendStateEvent(evt *mxevents.Event) (id.EventID, error) {
-	//TODO: Encryption flow before sending the event
 	fmt.Println(evt.RoomID)
 	fmt.Println(evt.Type)
 
@@ -776,9 +775,6 @@ func (c *ClientWrapper) HandleMessage(source mautrix.EventSource, mxEvent *event
 	}
 
 	c.addMessageToHistory(room, mxEvent)
-
-	//Possivelmente fazer alguma coisa com o conteudo da mensagem (se for um alerta de intruso por exemplo)
-
 }
 
 func (c *ClientWrapper) HandleRoomEncryption(source mautrix.EventSource, mxEvent *event.Event) {
