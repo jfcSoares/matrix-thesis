@@ -1166,6 +1166,7 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 
 		_, ack := c.readBytes(rw) //cover the case where the session had to be shared with the offline client
 		if ack != "" {            //An ACK was received
+			fmt.Printf("Event with eventID %s was delivered successfully.", toSend.eventID)
 			return
 		}
 	}
