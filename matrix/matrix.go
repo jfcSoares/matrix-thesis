@@ -1162,7 +1162,12 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 			}
 			c.writeBytes(rw, olmEvent)
 
-		} //maybe add else clause here, even though it probably will never happen
+		}
+
+		_, ack := c.readBytes(rw) //cover the case where the session had to be shared with the offline client
+		if ack != "" {            //An ACK was received
+			return
+		}
 	}
 }
 
@@ -1177,7 +1182,7 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 	missingEvt, _ = c.readBytes(rw)
 	room := c.GetOrCreateRoom(missingEvt.RoomID)
 
-	if existing, _ := c.history.Get(room, evt.ID); existing != nil {
+	if existing, _ := c.history.Get(room, missingEvt.ID); existing != nil {
 		c.logger.Info().Msg("Event is already stored, probably was already sent by another host")
 		return
 	}
@@ -1210,6 +1215,7 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 	}
 
 	c.addMessageToHistory(room, evt)
+	fmt.Printf("Message with eventID %s was received successfully.", evt.ID)
 	rw.Write([]byte("ACK"))
 }
 
@@ -1258,7 +1264,7 @@ func (c *ClientWrapper) readBytes(rw *bufio.ReadWriter) (evt *mxevents.Event, ac
 		return nil, ""
 	}
 
-	//Clause exclusively for the case where the event was succesfully decrypted at first try by the offline client
+	//Clause exclusively for the case where the event was succesfully decrypted
 	//and an ACK was sent to the online client
 	ack = string(evtBytes)
 	if strings.Compare(ack, "ACK") == 0 {
