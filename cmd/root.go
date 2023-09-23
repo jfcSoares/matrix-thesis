@@ -73,9 +73,9 @@ func Execute() {
 }
 
 func addSubcommandGroups() {
-	rootCmd.AddCommand(shell.New(rootCmd, nil)) //adds an interactive shell
 	rootCmd.AddCommand(user.UserCmd)            //adds the user commands as a whole subgroup
 	rootCmd.AddCommand(rooms.RoomCmd)           //adds the room commands as a subgroup
+	rootCmd.AddCommand(shell.New(rootCmd, nil)) //adds an interactive shell
 }
 
 // Set a variable in each command package (subgroup) pointing to the main client object (ifc.Thesgo)
