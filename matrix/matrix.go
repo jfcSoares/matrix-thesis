@@ -21,7 +21,6 @@ import (
 	"thesgo/offline"
 
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
-	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	"golang.org/x/exp/slices"
 
 	"github.com/libp2p/go-libp2p"
@@ -1014,7 +1013,7 @@ func newHost() host.Host {
 	host, err := libp2p.New(
 		// Use the keypair we generated
 		libp2p.Identity(priv),
-		libp2p.Transport(tcp.NewTCPTransport),
+		libp2p.ListenAddrStrings("/ip4/172.17.0.2/tcp/8080"),
 		// support TLS connections
 		libp2p.Security(libp2ptls.ID, libp2ptls.New),
 		// Let's prevent our peer from having too many
@@ -1025,6 +1024,8 @@ func newHost() host.Host {
 		fmt.Println("Uh oh - panicked when creating host")
 		panic(err)
 	}
+
+	fmt.Println("Addresses:", host.Addrs())
 
 	return host
 }
