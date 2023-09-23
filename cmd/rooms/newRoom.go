@@ -30,7 +30,6 @@ var newRoomCmd = &cobra.Command{
 func init() {
 	RoomCmd.AddCommand(newRoomCmd)
 
-	//Talvez tornar a flag do nome da room persistente, e mover para o comando room
 	//newRoomCmd.Flags().StringVarP(&roomName, "room-name", "n", "", "Name for the new room")
 	newRoomCmd.Flags().StringVarP(&topic, "topic", "t", "", "Topic for the new room")                                            //optional
 	newRoomCmd.Flags().StringArrayVarP(&inviteList, "invite list", "i", nil, "Any users you may want to invite to the new room") //Optional

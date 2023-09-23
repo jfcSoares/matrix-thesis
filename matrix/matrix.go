@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"thesgo/config"
-	"thesgo/debug"
+	deb "thesgo/debug"
 	"thesgo/matrix/mxevents"
 	"thesgo/matrix/rooms"
 	"thesgo/offline"
@@ -31,6 +31,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"maunium.net/go/gomuks/debug"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/crypto"
 	"maunium.net/go/mautrix/event"
@@ -75,11 +76,12 @@ func NewWrapper(conf *config.Config) *ClientWrapper {
 		running:      false,
 		disconnected: false,
 	}
+
 	return c
 }
 
 func (c *ClientWrapper) initLogger() zerolog.Logger {
-	return *debug.Initialize()
+	return *deb.Initialize()
 }
 
 // initializes the client and connects to the specified homeserver
@@ -139,13 +141,13 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 	}*/ //just in case, but probably will not be necessary
 
 	if !SkipVersionCheck && (!isStartup || len(c.client.AccessToken) > 0) { //sanity check
-		c.logger.Info().Msg("Checking versions that " + c.client.HomeserverURL.String() + " supports.")
+		debug.Printf("Checking versions that %s supports", c.client.HomeserverURL)
 		resp, err := c.client.Versions()
 		if err != nil {
-			c.logger.Err(err).Msg("Error checking supported versions")
+			debug.Print("Error checking supported versions")
 			return fmt.Errorf("failed to check server versions: %w", err)
 		} else if !resp.ContainsGreaterOrEqual(MinSpecVersion) {
-			c.logger.Info().Msg("Server doesn't support modern spec versions.")
+			debug.Print("Server doesn't support modern spec versions.")
 			bestVersionStr := "nothing"
 			bestVersion := mautrix.MustParseSpecVersion("r0.0.0")
 			for _, ver := range resp.Versions {
@@ -156,7 +158,7 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 			}
 			return fmt.Errorf("%w (it only supports %s, while this client requires %s)", ErrServerOutdated, bestVersionStr, MinSpecVersion.String())
 		} else {
-			c.logger.Info().Msg("Server supports modern spec versions")
+			debug.Print("Server supports modern spec versions")
 		}
 	}
 
@@ -270,6 +272,7 @@ func (c *ClientWrapper) Logout() {
 }
 
 func (c *ClientWrapper) Start() {
+	defer debug.Recover()
 	c.cryptoOnLogin() //get crypto store from files if they exist
 	c.OnLogin()       //Initialize the syncer
 
@@ -277,25 +280,25 @@ func (c *ClientWrapper) Start() {
 		return
 	}
 
-	c.logger.Info().Msg("Starting sync...")
+	debug.Print("Starting sync...")
 	c.running = true
 	c.client.StreamSyncMinAge = 30 * time.Minute //syncs with the server every 30min
 	for {
 		select {
 		case <-c.stop:
-			c.logger.Info().Msg("Stopping sync...")
+			debug.Print("Stopping sync...")
 			c.running = false
 			return
 		default:
 			if err := c.client.Sync(); err != nil {
 				if errors.Is(err, mautrix.MUnknownToken) {
-					c.logger.Error().Msg("Access token was not recognized -> logging out")
+					debug.Print("Access token was not recognized -> logging out")
 					c.Logout()
 				} else {
-					c.logger.Error().Msg("Sync() call errored with: " + err.Error())
+					debug.Print("Sync() call errored with: " + err.Error())
 				}
 			} else {
-				c.logger.Info().Msg("Sync() call returned successfully")
+				debug.Print("Sync() call returned successfully")
 			}
 		}
 	}
@@ -304,23 +307,24 @@ func (c *ClientWrapper) Start() {
 // Stop stops the Matrix syncer.
 func (c *ClientWrapper) Stop() {
 	if c.running {
-		c.logger.Info().Msg("Stopping Matrix client...")
+		debug.Print("Stopping Matrix client...")
 		select {
 		case c.stop <- true:
 		default:
 		}
 		c.client.StopSync()
+		debug.Print("Closing history manager...")
 		err := c.history.Close()
 		if err != nil {
-			c.logger.Err(err).Msg("Error closing history manager")
+			debug.Print("Error closing history manager")
 		}
 		c.history = nil
 
 		if c.crypto != nil {
-			c.logger.Info().Msg("Flushing crypto store")
+			debug.Print("Flushing crypto store")
 			err := c.crypto.FlushStore()
 			if err != nil {
-				c.logger.Error().Msg("Error on flushing the crypto store: " + err.Error())
+				debug.Print("Error on flushing the crypto store: " + err.Error())
 			}
 		}
 	}
@@ -333,7 +337,7 @@ func (c *ClientWrapper) OnLogin() {
 
 	c.client.Store = c.config
 
-	c.logger.Info().Msg("Initializing syncer")
+	debug.Print("Initializing syncer")
 	//Instantiate syncer and assign event handlers to corresponding event types
 	c.syncer = NewThesgoSyncer(c.config.Rooms)
 	if c.crypto != nil {
@@ -365,22 +369,22 @@ func (c *ClientWrapper) OnLogin() {
 	//commented out the handlers for unnecessary features for now
 	//TODO: Add custom event handler for offline comms maybe?
 	c.syncer.InitDoneCallback = func() { //once first sync is done
-		c.logger.Info().Msg("Initial sync done")
+		debug.Print("Initial sync done")
 		c.config.AuthCache.InitialSyncDone = true
-		c.logger.Info().Msg("Updating title caches")
+		debug.Print("Updating title caches")
 		for _, room := range c.config.Rooms.Map {
 			room.GetTitle()
 		}
-		c.logger.Info().Msg("Cleaning cached rooms from memory")
+		debug.Print("Cleaning cached rooms from memory")
 		c.config.Rooms.ForceClean()
-		c.logger.Info().Msg("Saving all data")
+		debug.Print("Saving all data")
 		c.config.SaveAll()
 		//fmt.Print("Adding rooms to UI")
 		//c.ui.MainView().SetRooms(c.config.Rooms)
 		//c.ui.Render()
 		// The initial sync can be a bit heavy, so we force run the GC here
 		// after cleaning up rooms from memory above.
-		c.logger.Info().Msg("Running GC")
+		debug.Print("Running GC")
 		runtime.GC()
 		dbg.FreeOSMemory()
 	}
@@ -388,7 +392,7 @@ func (c *ClientWrapper) OnLogin() {
 
 	c.client.Syncer = c.syncer
 
-	fmt.Println("OnLogin() done.")
+	debug.Print("OnLogin() done.")
 }
 
 //*************************** ROOMS *******************************//
@@ -576,13 +580,12 @@ func (c *ClientWrapper) FetchMembers(room *rooms.Room) error {
 func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64) ([]*mxevents.Event, uint64, error) {
 	events, newDBPointer, err := c.history.Load(room, limit, dbPointer) //tries to obtain event history of the given room locally
 	if err != nil {
-		c.logger.Err(err).Msg("Could not load events of room " + room.ID.String() + " from local cache")
+		debug.Printf("Could not load events of room " + room.ID.String() + " from local cache")
 		return nil, dbPointer, err
 	}
 
 	if len(events) > 0 {
-		//fmt.Printf("Loaded %d events for %s from local cache", len(events), room.ID)
-		c.logger.Info().Msg("Loaded " + strconv.Itoa(len(events)) + "from local cache of room with ID: " + room.ID.String())
+		debug.Printf("Loaded %d events for %s from local cache", len(events), room.ID)
 		return events, newDBPointer, nil
 	}
 
@@ -592,13 +595,11 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 		return nil, dbPointer, err
 	}
 
-	//fmt.Printf("Loaded %d events for %s from server", len(resp.Chunk), room.ID.String())
-	c.logger.Info().Msg("Loaded " + string(rune(len(resp.Chunk))) + " events for " + room.ID.String() + " from server from " + resp.Start + " to " + resp.End)
+	debug.Printf("Loaded %d events for %s from server", len(resp.Chunk), room.ID.String())
 	for i, evt := range resp.Chunk {
 		err := evt.Content.ParseRaw(evt.Type)
 		if err != nil {
-			fmt.Printf("Failed to unmarshal content of event %s (type %s) by %s in %s: %v\n%s", evt.ID, evt.Type.Repr(), evt.Sender, evt.RoomID, err, string(evt.Content.VeryRaw))
-			c.logger.Err(err).Msg("Failed to unmarshal content of event " + evt.ID.String() + " (type " + evt.Type.Repr() + ") by " + string(evt.Sender) + " in " + string(evt.RoomID) + " with content:" + string(evt.Content.VeryRaw))
+			debug.Printf("Failed to unmarshal content of event %s (type %s) by %s in %s: %v\n%s", evt.ID, evt.Type.Repr(), evt.Sender, evt.RoomID, err, string(evt.Content.VeryRaw))
 		}
 
 		if evt.Type == event.EventEncrypted {
@@ -609,7 +610,7 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 			} else {
 				decrypted, err := c.crypto.DecryptMegolmEvent(context.TODO(), evt)
 				if err != nil {
-					fmt.Printf("Failed to decrypt event %s: %v", evt.ID, err)
+					debug.Printf("Failed to decrypt event %s: %v", evt.ID, err)
 					c.logger.Err(err).Msg("Failed to decrypt event " + evt.ID.String())
 					evt.Type = mxevents.EventBadEncrypted
 					origContent, _ := evt.Content.Parsed.(*event.EncryptedEventContent)
@@ -645,27 +646,23 @@ func (c *ClientWrapper) GetHistory(room *rooms.Room, limit int, dbPointer uint64
 func (c *ClientWrapper) GetEvent(room *rooms.Room, eventID id.EventID) (*mxevents.Event, error) {
 	evt, err := c.history.Get(room, eventID) //First tries to obtain the event from the local cache
 	if err != nil && err != ErrEventNotFound {
-		fmt.Printf("Failed to get event %s from local cache: %v", eventID, err)
-		c.logger.Err(err).Msg("Failed to get event " + eventID.String() + " from local cache")
+		debug.Printf("Failed to get event %s from local cache: %v", eventID, err)
 	} else if evt != nil {
-		fmt.Printf("Found event %s in local cache", eventID)
-		c.logger.Info().Msg("Found event " + eventID.String() + " in local cache")
+		debug.Printf("Found event %s in local cache", eventID)
 		return evt, err
 	}
 
 	mxEvent, err := c.client.GetEvent(room.ID, eventID) //Otherwise ask the server for it
 	if err != nil {
-		c.logger.Err(err).Msg("Could not get event")
 		return nil, err
 	}
 
 	err = mxEvent.Content.ParseRaw(mxEvent.Type)
 	if err != nil {
-		c.logger.Err(err).Msg("Failed to unmarshal content of event " + evt.ID.String() + " (type " + evt.Type.Repr() + ") by " + string(evt.Sender) + " in " + string(evt.RoomID) + " with content:" + string(evt.Content.VeryRaw))
 		return nil, err
 	}
 
-	c.logger.Info().Msg("Loaded event " + eventID.String() + " from server")
+	debug.Printf("Loaded event %s from server", eventID)
 	return mxevents.Wrap(mxEvent), nil
 }
 
@@ -721,7 +718,6 @@ func (c *ClientWrapper) SendEvent(evt *mxevents.Event) (id.EventID, error) {
 
 // Sends a state event into a room
 func (c *ClientWrapper) SendStateEvent(evt *mxevents.Event) (id.EventID, error) {
-	//TODO: Encryption flow before sending the event
 	fmt.Println(evt.RoomID)
 	fmt.Println(evt.Type)
 
@@ -736,15 +732,16 @@ func (c *ClientWrapper) SendStateEvent(evt *mxevents.Event) (id.EventID, error) 
 }
 
 // Sends a read receipt regarding the event in the arguments
-func (c *ClientWrapper) SendReadReceipt(evt *mxevents.Event) error {
-	err := c.client.SendReceipt(evt.RoomID, evt.ID, event.ReceiptTypeRead, nil)
+func (c *ClientWrapper) MarkRead(roomID id.RoomID, evtID id.EventID) {
+	go func() {
+		defer debug.Recover()
+		err := c.client.MarkRead(roomID, evtID)
 
-	if err != nil {
-		c.logger.Error().Err(err).Msg("could not send read receipt")
-		return err
-	}
+		if err != nil {
+			debug.Printf("Failed to mark %s in %s as read: %v", evtID, roomID, err)
 
-	return nil
+		}
+	}()
 }
 
 // Get the state events for the current state of the given room
@@ -776,9 +773,6 @@ func (c *ClientWrapper) HandleMessage(source mautrix.EventSource, mxEvent *event
 	}
 
 	c.addMessageToHistory(room, mxEvent)
-
-	//Possivelmente fazer alguma coisa com o conteudo da mensagem (se for um alerta de intruso por exemplo)
-
 }
 
 func (c *ClientWrapper) HandleRoomEncryption(source mautrix.EventSource, mxEvent *event.Event) {
@@ -791,7 +785,7 @@ func (c *ClientWrapper) HandleRoomEncryption(source mautrix.EventSource, mxEvent
 func (c *ClientWrapper) HandleEncrypted(source mautrix.EventSource, mxEvent *event.Event) {
 	evt, err := c.crypto.DecryptMegolmEvent(context.TODO(), mxEvent)
 	if err != nil {
-		c.logger.Error().Err(err).Msg("failed to decrypt event contents")
+		debug.Printf("Failed to decrypt event %s: %v", mxEvent.ID, err)
 		mxEvent.Type = mxevents.EventBadEncrypted
 		origContent, _ := mxEvent.Content.Parsed.(*event.EncryptedEventContent)
 		mxEvent.Content.Parsed = &mxevents.BadEncryptedContent{
@@ -804,10 +798,10 @@ func (c *ClientWrapper) HandleEncrypted(source mautrix.EventSource, mxEvent *eve
 	if evt.Type.IsInRoomVerification() {
 		err := c.crypto.ProcessInRoomVerification(evt)
 		if err != nil {
-			c.logger.Error().Msg("[Crypto/Error] Failed to process in-room verification event " + evt.ID.String() + " of type " + evt.Type.String() + ":" + err.Error())
+			debug.Printf("[Crypto/Error] Failed to process in-room verification event %s of type %s: %v", evt.ID, evt.Type.String(), err)
 
 		} else {
-			c.logger.Info().Msg("[Crypto/Debug] Processed in-room verification event " + evt.ID.String() + " of type " + evt.Type.String())
+			debug.Printf("[Crypto/Error] Failed to process in-room verification event %s of type %s", evt.ID, evt.Type.String())
 		}
 	} else {
 		c.HandleMessage(source, evt)
@@ -847,7 +841,7 @@ func (c *ClientWrapper) processOwnMembershipChange(evt *event.Event) {
 		prevMembership = evt.Unsigned.PrevContent.AsMember().Membership
 	}
 
-	c.logger.Info().Msg("Processing own membership change: " + string(prevMembership) + "->" + string(membership) + " in " + evt.RoomID.String())
+	debug.Printf("Processing own membership change: %s->%s in %s", prevMembership, membership, evt.RoomID)
 	if membership == prevMembership {
 		return
 	}
@@ -940,8 +934,7 @@ func (c *ClientWrapper) parseReadReceipt(room *rooms.Room, evt *event.Event) (la
 func (c *ClientWrapper) addMessageToHistory(room *rooms.Room, mxEvent *event.Event) {
 	events, err := c.history.Append(room, []*event.Event{mxEvent}) //add the newly-received event to room history
 	if err != nil {
-		fmt.Printf("Failed to add event %s to history: %v", mxEvent.ID, err)
-		c.logger.Err(err).Msg("Failed to add event " + mxEvent.ID.String() + " to history")
+		debug.Printf("Failed to add event %s to history: %v", mxEvent.ID, err)
 	}
 
 	evt := events[0]
@@ -958,7 +951,7 @@ func (c *ClientWrapper) addMessageToHistory(room *rooms.Room, mxEvent *event.Eve
 		Msg("Received message")
 
 	//this will fail if the device is offline
-	c.SendReadReceipt(evt) //Spec recommends not sending the receipt right as the message is received, but
+	c.MarkRead(room.ID, evt.ID) //Spec recommends not sending the receipt right as the message is received, but
 	//in this case i think this is neglectable -> keep this in mind tho
 	//Talvez so mandar o receipt quando o user usar o commando da history de uma sala?
 }
@@ -1167,7 +1160,13 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 			}
 			c.writeBytes(rw, olmEvent)
 
-		} //maybe add else clause here, even though it probably will never happen
+		}
+
+		_, ack := c.readBytes(rw) //cover the case where the session had to be shared with the offline client
+		if ack != "" {            //An ACK was received
+			fmt.Printf("Event with eventID %s was delivered successfully.", toSend.eventID)
+			return
+		}
 	}
 }
 
@@ -1182,7 +1181,7 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 	missingEvt, _ = c.readBytes(rw)
 	room := c.GetOrCreateRoom(missingEvt.RoomID)
 
-	if existing, _ := c.history.Get(room, evt.ID); existing != nil {
+	if existing, _ := c.history.Get(room, missingEvt.ID); existing != nil {
 		c.logger.Info().Msg("Event is already stored, probably was already sent by another host")
 		return
 	}
@@ -1215,6 +1214,7 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 	}
 
 	c.addMessageToHistory(room, evt)
+	fmt.Printf("Message with eventID %s was received successfully.", evt.ID)
 	rw.Write([]byte("ACK"))
 }
 
@@ -1263,7 +1263,7 @@ func (c *ClientWrapper) readBytes(rw *bufio.ReadWriter) (evt *mxevents.Event, ac
 		return nil, ""
 	}
 
-	//Clause exclusively for the case where the event was succesfully decrypted at first try by the offline client
+	//Clause exclusively for the case where the event was succesfully decrypted
 	//and an ACK was sent to the online client
 	ack = string(evtBytes)
 	if strings.Compare(ack, "ACK") == 0 {

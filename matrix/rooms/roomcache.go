@@ -13,6 +13,7 @@ import (
 
 	sync "github.com/sasha-s/go-deadlock"
 
+	"maunium.net/go/gomuks/debug"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
@@ -103,14 +104,14 @@ func (cache *RoomCache) LoadList() error {
 		}
 		return fmt.Errorf("failed to open room list file for reading: %w", err)
 	}
-	defer fmtPrintError(file.Close, "Failed to close room list file after reading")
+	defer debugPrintError(file.Close, "Failed to close room list file after reading")
 
 	// Open gzip reader for room list file
 	cmpReader, err := gzip.NewReader(file)
 	if err != nil {
 		return fmt.Errorf("failed to read gzip room list: %w", err)
 	}
-	defer fmtPrintError(cmpReader.Close, "Failed to close room list gzip reader")
+	defer debugPrintError(cmpReader.Close, "Failed to close room list gzip reader")
 
 	// Open gob decoder for gzip reader
 	dec := gob.NewDecoder(cmpReader)
@@ -151,17 +152,17 @@ func (cache *RoomCache) SaveList() error {
 	cache.Lock()
 	defer cache.Unlock()
 
-	fmt.Print("Saving room list...")
+	debug.Print("Saving room list...")
 	// Open room list file
 	file, err := os.OpenFile(cache.listPath, os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to open room list file for writing: %w", err)
 	}
-	defer fmtPrintError(file.Close, "Failed to close room list file after writing")
+	defer debugPrintError(file.Close, "Failed to close room list file after writing")
 
 	// Open gzip writer for room list file
 	cmpWriter := gzip.NewWriter(file)
-	defer fmtPrintError(cmpWriter.Close, "Failed to close room list gzip writer")
+	defer debugPrintError(cmpWriter.Close, "Failed to close room list gzip writer")
 
 	// Open gob encoder for gzip writer
 	enc := gob.NewEncoder(cmpWriter)
@@ -175,10 +176,10 @@ func (cache *RoomCache) SaveList() error {
 	for _, node := range cache.Map {
 		err = enc.Encode(node)
 		if err != nil {
-			fmt.Printf("Failed to encode room list entry of %s: %v", node.ID, err)
+			debug.Printf("Failed to encode room list entry of %s: %v", node.ID, err)
 		}
 	}
-	fmt.Print("Room list saved to", cache.listPath, len(cache.Map), cache.size)
+	debug.Print("Room list saved to", cache.listPath, len(cache.Map), cache.size)
 	return nil
 }
 
@@ -206,7 +207,7 @@ func (cache *RoomCache) touch(node *Room) {
 	if node == cache.head {
 		return
 	}
-	fmt.Print("Touching", node.ID)
+	debug.Print("Touching", node.ID)
 	cache.llPop(node)
 	cache.llPush(node)
 	node.touch = time.Now().Unix()
@@ -301,8 +302,8 @@ func (cache *RoomCache) llPop(node *Room) {
 
 func (cache *RoomCache) llPush(node *Room) {
 	if node.next != nil || node.prev != nil {
-		//fmt.PrintStack()
-		fmt.Print("Tried to llPush node that is already in stack")
+		debug.PrintStack()
+		debug.Print("Tried to llPush node that is already in stack")
 		return
 	}
 	if node == cache.head {
@@ -341,12 +342,12 @@ func (cache *RoomCache) clean(force bool) {
 		node := cache.tail
 		cache.llPop(node)
 		if !ok {
-			fmt.Print("Unload returned false, pushing node back")
+			debug.Print("Unload returned false, pushing node back")
 			cache.llPush(node)
 		}
 	}
 	if cleaned := origSize - cache.size; cleaned > 0 {
-		fmt.Print("Cleaned", cleaned, "rooms")
+		debug.Print("Cleaned", cleaned, "rooms")
 	}
 }
 
@@ -356,7 +357,7 @@ func (cache *RoomCache) Unload(node *Room) {
 	cache.llPop(node)
 	ok := node.Unload()
 	if !ok {
-		fmt.Print("Unload returned false, pushing node back")
+		debug.Print("Unload returned false, pushing node back")
 		cache.llPush(node)
 	}
 }
