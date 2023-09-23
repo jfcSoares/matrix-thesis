@@ -1,6 +1,8 @@
 package offline
 
 import (
+	"fmt"
+
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 
@@ -25,6 +27,7 @@ func InitMDNS(peerhost host.Host, rendezvous string) chan peer.AddrInfo {
 	// An hour might be a long long period in practical applications. But this is fine for us
 	ser := mdns.NewMdnsService(peerhost, rendezvous, n)
 	if err := ser.Start(); err != nil {
+		fmt.Print(err)
 		panic(err)
 	}
 	return n.PeerChan
