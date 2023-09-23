@@ -1013,29 +1013,14 @@ func newHost() host.Host {
 	host, err := libp2p.New(
 		// Use the keypair we generated
 		libp2p.Identity(priv),
-		// Multiple listen addresses
-		libp2p.ListenAddrStrings(
-			"/ip4/0.0.0.0/tcp/9000", // regular tcp connections
-			//"/ip4/0.0.0.0/udp/9000/quic", // a UDP endpoint for the QUIC transport
-		),
 		// support TLS connections
 		libp2p.Security(libp2ptls.ID, libp2ptls.New),
-		// support any other default transports (TCP)
-		libp2p.DefaultTransports,
 		// Let's prevent our peer from having too many
 		// connections by attaching a connection manager.
 		libp2p.ConnectionManager(connmgr),
-		// Attempt to open ports using uPNP for NATed hosts.
-		libp2p.NATPortMap(),
-		// If you want to help other peers to figure out if they are behind
-		// NATs, you can launch the server-side of AutoNAT too (AutoRelay
-		// already runs the client)
-		//
-		// This service is highly rate-limited and should not cause any
-		// performance issues.
-		libp2p.EnableNATService(),
 	)
 	if err != nil {
+		fmt.Println("Uh oh - panicked when creating host")
 		panic(err)
 	}
 
@@ -1061,11 +1046,11 @@ func (c *ClientWrapper) runOffline() {
 			for { // allows multiple peers to join
 				peer := <-peerChan // will block until we discover a peer
 				fmt.Println("Found peer:", peer, ", connecting")
-				c.logger.Info().Msg("Found peer: " + peer.String() + ", connecting")
+				debug.Print("Found peer: " + peer.String() + ", connecting")
 
 				if err := host.Connect(ctx, peer); err != nil {
 					fmt.Println("Connection failed:", err)
-					c.logger.Err(err).Msg("Connection failed")
+					debug.Print("Connection failed")
 					continue
 				}
 
@@ -1074,12 +1059,12 @@ func (c *ClientWrapper) runOffline() {
 
 				if err != nil {
 					fmt.Println("Stream open failed", err)
-					c.logger.Err(err).Msg("Could not open stream")
+					debug.Print("Could not open stream")
 				} else {
 					rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
 
 					fmt.Println("Connected to:", peer)
-					c.logger.Info().Msg("Connected to: " + peer.String())
+					debug.Print("Connected to: " + peer.String())
 					go c.sendOffline(rw)
 
 				}
@@ -1087,14 +1072,15 @@ func (c *ClientWrapper) runOffline() {
 				//stream.Close() //manter aberto
 			}
 		default:
-			c.logger.Info().Msg("Listening for connections in case we are offline")
+			debug.Print("Listening for connections in case we are offline")
 			select {} //thread hangs forever until the other case is true
 		}
 	}
 }
 
 func (c *ClientWrapper) handleIncomingStream(s network.Stream) {
-	c.logger.Info().Msg("Got a new stream!")
+	debug.Print("Got a new stream!")
+	fmt.Println("Got a new stream!")
 	// Create a buffer stream for non blocking read and write.
 	rw := bufio.NewReadWriter(bufio.NewReader(s), bufio.NewWriter(s))
 
@@ -1121,6 +1107,7 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 	room := c.GetRoom(toSend.roomID)
 	evt, _ := c.GetEvent(room, toSend.eventID)
 
+	fmt.Println("Starting protocol to send event with matrix encryption.")
 	offlineHost := c.exchangeCredentials(rw)
 
 	if slices.Contains(toSend.users, offlineHost.UserID) {
@@ -1164,7 +1151,8 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 
 		_, ack := c.readBytes(rw) //cover the case where the session had to be shared with the offline client
 		if ack != "" {            //An ACK was received
-			fmt.Printf("Event with eventID %s was delivered successfully.", toSend.eventID)
+			fmt.Printf("Event with eventID %s was delivered successfully user with ID %s.", toSend.eventID, offlineHost.UserID)
+			debug.Printf("Event with eventID %s was delivered successfully to user with ID %s.", toSend.eventID, offlineHost.UserID)
 			return
 		}
 	}
@@ -1182,7 +1170,8 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 	room := c.GetOrCreateRoom(missingEvt.RoomID)
 
 	if existing, _ := c.history.Get(room, missingEvt.ID); existing != nil {
-		c.logger.Info().Msg("Event is already stored, probably was already sent by another host")
+		debug.Print("Event is already stored, probably was already sent by another host")
+		fmt.Println("Event is already stored, terminating connection to host")
 		return
 	}
 
