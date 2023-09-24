@@ -4,6 +4,8 @@ Copyright © 2023 NAME HERE <EMAIL ADDRESS>
 package rooms
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"maunium.net/go/mautrix/id"
 )
@@ -15,7 +17,10 @@ var forgetCmd = &cobra.Command{
 	Long: `When a user forgets a room, it will no longer be able to retrieve history for the given room, and
 	iff all users on a homeserver forget a room, the room is eligible for deletion from that homeserver.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		Backend.Matrix().ForgetRoom(id.RoomID(RoomName))
+		err := Backend.Matrix().ForgetRoom(id.RoomID(RoomName))
+		if err != nil {
+			fmt.Println("Could not forget room with ID: " + RoomName)
+		}
 	},
 }
 

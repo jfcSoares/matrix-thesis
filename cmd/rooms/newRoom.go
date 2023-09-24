@@ -4,6 +4,8 @@ Copyright © 2023 NAME HERE <EMAIL ADDRESS>
 package rooms
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"maunium.net/go/mautrix/id"
 )
@@ -23,7 +25,14 @@ var newRoomCmd = &cobra.Command{
 			user := id.NewUserID(name, "https://lpgains.duckdns.org")
 			invited = append(invited, user)
 		}
-		Backend.Matrix().NewRoom(RoomName, topic, invited)
+		fmt.Println(invited)
+		room, err := Backend.Matrix().NewRoom(RoomName, topic, invited)
+		if err != nil {
+			fmt.Println("Could not create new room")
+		} else {
+			fmt.Println("Room " + room.GetTitle() + " is now created and encrypted.")
+		}
+
 	},
 }
 
