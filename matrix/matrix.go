@@ -918,7 +918,7 @@ func (c *ClientWrapper) parseReadReceipt(room *rooms.Room, evt *event.Event) (la
 
 			//if at least one user did not send a receipt for this event
 			if len(offline.users) > 0 {
-				fmt.Println("Found events to send offline")
+				fmt.Printf("Found event %s to send offline to %s", eventID, offline.users)
 				offline.eventID = eventID
 				offline.roomID = evt.RoomID
 				c.sendOff <- offline //send data to goroutine
