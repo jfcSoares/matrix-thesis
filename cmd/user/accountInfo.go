@@ -25,7 +25,7 @@ var accountInfoCmd = &cobra.Command{
 		fmt.Println("Device ID: " + deviceID)
 		fmt.Println("Access Token: " + accToken)
 		var rooms, _ = Backend.Matrix().RoomsJoined()
-		fmt.Print("User rooms:")
+		fmt.Print("User rooms: ")
 		for _, room := range rooms {
 			fmt.Println(room.GetTitle() + " : " + room.ID.String())
 		}
