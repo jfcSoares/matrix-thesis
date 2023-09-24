@@ -496,7 +496,7 @@ func (c *ClientWrapper) InviteUser(roomID id.RoomID, reason, user string) error 
 }
 
 // Lists the rooms the user is currently joined into
-func (c *ClientWrapper) RoomsJoined() ([]id.RoomID, error) {
+func (c *ClientWrapper) RoomsJoined() (rooms []*rooms.Room, err error) {
 	resp, err := c.client.JoinedRooms()
 
 	if err != nil {
@@ -507,12 +507,12 @@ func (c *ClientWrapper) RoomsJoined() ([]id.RoomID, error) {
 		for i := 0; i < len(resp.JoinedRooms); i++ { //first indexes are the most recent rooms
 			//fmt.Print(resp.JoinedRooms[i] + ", ")
 			//if there aren't any rooms in memory, creates them
-			c.config.Rooms.GetOrCreate(resp.JoinedRooms[i])
-
+			room := c.config.Rooms.GetOrCreate(resp.JoinedRooms[i])
+			rooms = append(rooms, room)
 		}
 	}
 
-	return resp.JoinedRooms, err
+	return rooms, err
 }
 
 // Joins a room with the given room or alias, through the specified server in the arguments

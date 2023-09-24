@@ -21,7 +21,7 @@ var historyCmd = &cobra.Command{
 		hist, _, _ := Backend.Matrix().GetHistory(room, 50, 0)
 		for _, evt := range hist {
 			if evt.Type == event.EventMessage { //only show the user messages, not the internal matrix messages
-				fmt.Println(evt.Content.AsMessage().Body)
+				fmt.Println(evt.Sender.String() + " -> " + evt.Content.AsMessage().Body)
 			}
 		}
 	},

@@ -31,7 +31,7 @@ type MatrixContainer interface {
 	ExitRoom(roomID id.RoomID, reason string) error
 	NewRoom(roomName string, topic string, inviteList []id.UserID) (*rooms.Room, error)
 	ForgetRoom(roomID id.RoomID) error
-	RoomsJoined() ([]id.RoomID, error)
+	RoomsJoined() (rooms []*rooms.Room, err error)
 	InviteUser(roomID id.RoomID, reason, user string) error
 
 	FetchMembers(room *rooms.Room) error
