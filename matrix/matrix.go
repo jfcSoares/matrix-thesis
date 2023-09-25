@@ -1083,7 +1083,7 @@ func (c *ClientWrapper) runOffline() {
 		case <-time.After(15 * time.Minute):
 			//Repeat this loop every 15 min
 			fmt.Println("No data to be sent yet.")
-		default:
+			//default:
 			/*fmt.Print("Waiting for connections in case we are offline, or for data to be ready to send")
 			debug.Print("Listening for connections in case we are offline")
 			select {} //thread hangs forever until the other case is true*/
@@ -1105,6 +1105,7 @@ func (c *ClientWrapper) handleIncomingStream(s network.Stream) {
 		//Wrap the worker call in a closure that makes sure to tell the WaitGroup that this worker is done.
 		//This way the worker itself does not have to be aware of the concurrency primitives involved in its execution.
 		defer wg.Done()
+		fmt.Println("Starting to read from stream...")
 		c.readData(rw)
 	}()
 
@@ -1121,7 +1122,7 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 	evt, _ := c.GetEvent(room, toSend.eventID)
 
 	fmt.Println("Starting protocol to send event with matrix encryption.")
-	offlineHost := c.exchangeCredentials(rw)
+	offlineHost := c.credentialsToOffline(rw)
 
 	if slices.Contains(toSend.users, offlineHost.UserID) {
 		idKey, edKey, err := c.FetchDeviceKeys(offlineHost.UserID, id.DeviceID(offlineHost.DeviceID))
@@ -1172,13 +1173,15 @@ func (c *ClientWrapper) sendOffline(rw *bufio.ReadWriter) {
 }
 
 func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
-	hostDevice := c.exchangeCredentials(rw)
+	fmt.Println("Exchanging Matrix credentials...")
+	hostDevice := c.credentialsToOnline(rw)
 	senderCredentials := map[id.UserID][]id.DeviceID{hostDevice.UserID: {hostDevice.DeviceID}}
 
 	var missingEvt *mxevents.Event
 	var evt *event.Event
 	var err error
 
+	fmt.Println("Received encrypted event from online host.")
 	missingEvt, _ = c.readBytes(rw)
 	room := c.GetOrCreateRoom(missingEvt.RoomID)
 
@@ -1220,7 +1223,19 @@ func (c *ClientWrapper) readData(rw *bufio.ReadWriter) {
 	rw.Write([]byte("ACK"))
 }
 
-func (c *ClientWrapper) exchangeCredentials(rw *bufio.ReadWriter) *id.Device {
+func (c *ClientWrapper) credentialsToOnline(rw *bufio.ReadWriter) *id.Device {
+	//receive other host's client credentials
+	var hostDevice *id.Device
+	bytes, _ := rw.ReadBytes('\n')
+	json.Unmarshal(bytes, hostDevice)
+	fmt.Println("Received online host's credentials.")
+
+	//Should be safe to call both on and offline
+	if trusted := c.crypto.IsDeviceTrusted(hostDevice); !trusted {
+		c.logger.Info().Msg("Host device is not trusted")
+		return nil
+	}
+
 	//send our credentials to connected host
 	selfID, err := c.crypto.CryptoStore.GetDevice(c.client.UserID, c.client.DeviceID)
 	if err != nil { //since the store used by the crypto module is a db, this probably won't fail while offline
@@ -1229,11 +1244,28 @@ func (c *ClientWrapper) exchangeCredentials(rw *bufio.ReadWriter) *id.Device {
 
 	marshalled, _ := json.Marshal(selfID)
 	rw.Write(marshalled)
+	fmt.Println("Sent credentials to online host.")
+
+	return hostDevice
+
+}
+
+func (c *ClientWrapper) credentialsToOffline(rw *bufio.ReadWriter) *id.Device {
+	//send our credentials to connected host
+	selfID, err := c.crypto.CryptoStore.GetDevice(c.client.UserID, c.client.DeviceID)
+	if err != nil { //since the store used by the crypto module is a db, this probably won't fail while offline
+		c.logger.Err(err).Msg("Could not fetch own device info from crypto store")
+	}
+
+	marshalled, _ := json.Marshal(selfID)
+	rw.Write(marshalled)
+	fmt.Println("Sent credentials to offline host.")
 
 	//receive other host's client credentials
 	var hostDevice *id.Device
 	bytes, _ := rw.ReadBytes('\n')
 	json.Unmarshal(bytes, hostDevice)
+	fmt.Println("Received offline host's credentials.")
 
 	//Should be safe to call both on and offline
 	if trusted := c.crypto.IsDeviceTrusted(hostDevice); !trusted {
