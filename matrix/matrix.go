@@ -1020,7 +1020,7 @@ func newHost() host.Host {
 	host, err := libp2p.New(
 		// Use the keypair we generated
 		libp2p.Identity(priv),
-		libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8080"),
+		//libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8080"),
 		// support TLS connections
 		libp2p.Security(libp2ptls.ID, libp2ptls.New),
 		// Let's prevent our peer from having too many
@@ -1032,7 +1032,7 @@ func newHost() host.Host {
 		panic(err)
 	}
 
-	fmt.Println("Addresses:", host.Addrs())
+	fmt.Println("Listen Addresses:", host.Addrs())
 
 	return host
 }
