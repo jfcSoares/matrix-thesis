@@ -163,7 +163,7 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 	}
 
 	c.stop = make(chan bool, 1)
-	c.sendOff = make(chan offlineData, 1) //possibly making this a buffered channel might be good
+	c.sendOff = make(chan offlineData) //possibly making this a buffered channel might be good
 
 	if len(accessToken) > 0 {
 		go c.Start()
@@ -1086,7 +1086,7 @@ func (c *ClientWrapper) runOffline() {
 		default:
 			fmt.Print("Waiting for connections in case we are offline, or for data to be ready to send")
 			debug.Print("Listening for connections in case we are offline")
-			select {} //thread hangs forever until the other case is true
+			//select {} //thread hangs forever until the other case is true
 		}
 	}
 }
