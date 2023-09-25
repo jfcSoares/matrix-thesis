@@ -1051,7 +1051,6 @@ func (c *ClientWrapper) runOffline() {
 
 	peerChan := offline.InitMDNS(host, "matrix-offline")
 	for {
-		fmt.Println("Entered offline routine loop")
 		select {
 		case <-c.sendOff: //if there is something to send, look for peers
 			fmt.Println("Starting search for offline host")
@@ -1080,9 +1079,10 @@ func (c *ClientWrapper) runOffline() {
 					go c.sendOffline(rw)
 
 				}
-
-				//stream.Close() //manter aberto
 			}
+		case <-time.After(15 * time.Minute):
+			//Repeat this loop every 15 min
+			fmt.Println("No data to be sent yet.")
 		default:
 			/*fmt.Print("Waiting for connections in case we are offline, or for data to be ready to send")
 			debug.Print("Listening for connections in case we are offline")
