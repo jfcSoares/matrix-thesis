@@ -1022,7 +1022,7 @@ func newHost() host.Host {
 		libp2p.Identity(priv),
 		libp2p.ListenAddrStrings(
 			"/ip4/172.20.0.0/tcp/8080",
-			"ip4/172.18.0.0/tcp/8080",
+			"/ip4/172.18.0.0/tcp/8080",
 		),
 		// support TLS connections
 		libp2p.Security(libp2ptls.ID, libp2ptls.New),
