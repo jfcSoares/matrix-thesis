@@ -100,7 +100,6 @@ func (c *ClientWrapper) InitClient(isStartup bool) error {
 		accessToken = c.config.AccessToken
 		mxid = c.config.UserID
 	}
-	fmt.Println(mxid.String() + ", " + accessToken)
 
 	var err error
 	if mxid.String() != "" && len(accessToken) > 0 {
@@ -1021,8 +1020,7 @@ func newHost() host.Host {
 		// Use the keypair we generated
 		libp2p.Identity(priv),
 		libp2p.ListenAddrStrings(
-			"/ip4/172.20.0.0/tcp/8080",
-			"/ip4/172.18.0.0/tcp/8080",
+			"/ip4/0.0.0.0/tcp/8080",
 		),
 		// support TLS connections
 		libp2p.Security(libp2ptls.ID, libp2ptls.New),
