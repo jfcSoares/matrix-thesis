@@ -1020,9 +1020,13 @@ func newHost() host.Host {
 	host, err := libp2p.New(
 		// Use the keypair we generated
 		libp2p.Identity(priv),
-		//libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8080"),
+		libp2p.ListenAddrStrings(
+			"/ip4/172.20.0.0/tcp/8080",
+			"ip4/172.18.0.0/tcp/8080",
+		),
 		// support TLS connections
 		libp2p.Security(libp2ptls.ID, libp2ptls.New),
+		libp2p.DefaultTransports,
 		// Let's prevent our peer from having too many
 		// connections by attaching a connection manager.
 		libp2p.ConnectionManager(connmgr),
