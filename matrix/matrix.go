@@ -733,16 +733,14 @@ func (c *ClientWrapper) SendStateEvent(evt *mxevents.Event) (id.EventID, error) 
 }
 
 // Sends a read receipt regarding the event in the arguments
-func (c *ClientWrapper) MarkRead(roomID id.RoomID, evtID id.EventID) {
-	go func() {
-		defer debug.Recover()
-		err := c.client.MarkRead(roomID, evtID)
-
-		if err != nil {
-			debug.Printf("Failed to mark %s in %s as read: %v", evtID, roomID, err)
-
-		}
-	}()
+func (c *ClientWrapper) MarkRead(roomID id.RoomID, evtID id.EventID) error {
+	defer debug.Recover()
+	err := c.client.MarkRead(roomID, evtID)
+	if err != nil {
+		debug.Printf("Failed to mark %s in %s as read: %v", evtID, roomID, err)
+		return err
+	}
+	return nil
 }
 
 // Get the state events for the current state of the given room
@@ -952,8 +950,15 @@ func (c *ClientWrapper) addMessageToHistory(room *rooms.Room, mxEvent *event.Eve
 		Str("body", evt.Content.AsMessage().Body).
 		Msg("Received message")
 
-	//this will fail if the device is offline
-	c.MarkRead(room.ID, evt.ID) //Spec recommends not sending the receipt right as the message is received, but
+	err = c.MarkRead(room.ID, evt.ID)
+	if err != nil { //this will fail if the device is offline
+		//TODO: Add support for this case, otherwise client will be stuck in a permanent loop because it has the event, but
+		//did not send the receipt cause it was offline, meaning that the other clients will always try to send this event to this device
+		//over and over
+		return
+	}
+
+	//Spec recommends not sending the receipt right as the message is received, but
 	//in this case i think this is neglectable -> keep this in mind tho
 	//Talvez so mandar o receipt quando o user usar o commando da history de uma sala?
 }
@@ -1046,6 +1051,7 @@ func (c *ClientWrapper) runOffline() {
 
 	peerChan := offline.InitMDNS(host, "matrix-offline")
 	for {
+		fmt.Println("Entered offline routine loop")
 		select {
 		case <-c.sendOff: //if there is something to send, look for peers
 			fmt.Println("Starting search for offline host")
@@ -1078,6 +1084,7 @@ func (c *ClientWrapper) runOffline() {
 				//stream.Close() //manter aberto
 			}
 		default:
+			fmt.Print("Waiting for connections in case we are offline, or for data to be ready to send")
 			debug.Print("Listening for connections in case we are offline")
 			select {} //thread hangs forever until the other case is true
 		}
