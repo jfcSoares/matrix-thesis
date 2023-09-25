@@ -688,7 +688,8 @@ func (c *ClientWrapper) SendEvent(evt *mxevents.Event) (id.EventID, error) {
 				c.logger.Error().Err(err).Msg("Could not encrypt the specified event")
 				return "", err
 			}
-			fmt.Print("Got", err, "while trying to encrypt message, sharing group session and trying again...")
+			fmt.Print("Got ", err, " while trying to encrypt message, sharing group session and trying again...")
+			debug.Print("Got ", err, " while trying to encrypt message, sharing group session and trying again...")
 			err = c.crypto.ShareGroupSession(context.TODO(), room.ID, room.GetMemberList())
 			if err != nil {
 				c.logger.Error().Err(err).Msg("Could not share the group session successfully")
@@ -1047,6 +1048,7 @@ func (c *ClientWrapper) runOffline() {
 	for {
 		select {
 		case <-c.sendOff: //if there is something to send, look for peers
+			fmt.Println("Starting search for offline host")
 			for { // allows multiple peers to join
 				peer := <-peerChan // will block until we discover a peer
 				fmt.Println("Found peer:", peer, ", connecting")

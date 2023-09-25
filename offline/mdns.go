@@ -30,5 +30,7 @@ func InitMDNS(peerhost host.Host, rendezvous string) chan peer.AddrInfo {
 		fmt.Print("AHHH " + err.Error())
 		panic(err)
 	}
+
+	fmt.Println("Started mDNS service.")
 	return n.PeerChan
 }
