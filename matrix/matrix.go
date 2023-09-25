@@ -1084,9 +1084,9 @@ func (c *ClientWrapper) runOffline() {
 				//stream.Close() //manter aberto
 			}
 		default:
-			fmt.Print("Waiting for connections in case we are offline, or for data to be ready to send")
+			/*fmt.Print("Waiting for connections in case we are offline, or for data to be ready to send")
 			debug.Print("Listening for connections in case we are offline")
-			//select {} //thread hangs forever until the other case is true
+			select {} //thread hangs forever until the other case is true*/
 		}
 	}
 }
